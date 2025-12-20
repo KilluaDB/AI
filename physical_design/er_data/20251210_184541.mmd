@@ -1,0 +1,146 @@
+erDiagram
+    Student {
+        int student_id PK
+        string first_name
+        string last_name
+        date date_of_birth
+        string email
+        string phone
+        string address
+        date admission_date
+        date graduation_date
+        string status
+    }
+
+    Faculty {
+        int faculty_id PK
+        string first_name
+        string last_name
+        string email
+        string phone
+        int department_id FK
+        string position
+        date hire_date
+    }
+
+    Department {
+        int department_id PK
+        string name
+        string building
+        float budget
+        int chair_faculty_id FK
+    }
+
+    Course {
+        int course_id PK
+        string title
+        string description
+        int credits
+        int department_id FK
+        string level
+    }
+
+    Classroom {
+        int room_id PK
+        string building
+        string room_number
+        int capacity
+        string type
+    }
+
+    Semester {
+        int semester_id PK
+        string name
+        date start_date
+        date end_date
+    }
+
+    Major {
+        int major_id PK
+        string name
+        int department_id FK
+        string requirements
+    }
+
+    Minor {
+        int minor_id PK
+        string name
+        int department_id FK
+        string requirements
+    }
+
+    Section {
+        int section_id PK
+        int course_id FK
+        int semester_id FK
+        string section_number
+        int faculty_id FK
+        string schedule
+    }
+
+    Enrollment {
+        int enrollment_id PK
+        int student_id FK
+        int section_id FK
+        date enrollment_date
+        string status
+        string grade
+    }
+
+    ClassSession {
+        int session_id PK
+        int section_id FK
+        int room_id FK
+        date date
+        string time
+    }
+
+    Student ||--o{ Enrollment : "enrolls"
+    Section ||--o{ Enrollment : "has"
+    Faculty ||--o{ Section : "teaches"
+    Course ||--o{ Section : "has"
+    Semester ||--o{ Section : "has"
+    Course ||--o{ Course : "hasPrerequisite"
+    Department ||--o{ Course : "belongsTo"
+    Department ||--o{ Faculty : "employs"
+    Department ||--o{ Major : "offers"
+    Department ||--o{ Minor : "offers"
+    Student ||--o{ DeclaresMajor : "declaresMajor"
+    Major ||--o{ DeclaresMajor : "has"
+    Student ||--o{ DeclaresMinor : "declaresMinor"
+    Minor ||--o{ DeclaresMinor : "has"
+    Section ||--o{ ScheduledIn : "scheduledIn"
+    Classroom ||--o{ ScheduledIn : "hosts"
+    Enrollment ||--o{ Attends : "attends"
+    ClassSession ||--o{ Attends : "has"
+
+    DeclaresMajor {
+        int declaration_id PK
+        int student_id FK
+        int major_id FK
+        date declaration_date
+        boolean is_primary
+    }
+
+    DeclaresMinor {
+        int declaration_id PK
+        int student_id FK
+        int minor_id FK
+        date declaration_date
+    }
+
+    ScheduledIn {
+        int scheduled_id PK
+        int section_id FK
+        int room_id FK
+        string days
+        string time_slot
+    }
+
+    Attends {
+        int attend_id PK
+        int enrollment_id FK
+        int session_id FK
+        date date
+        string status
+    }
