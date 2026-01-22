@@ -1,0 +1,114 @@
+erDiagram
+    PLAYER {
+        int PlayerID PK
+        string Name
+        date DateOfBirth
+        string Nationality
+        string Position
+    }
+
+    TEAM {
+        int TeamID PK
+        string Name
+        string City
+        int FoundedYear
+    }
+
+    COACH {
+        int CoachID PK
+        string Name
+        date DateOfBirth
+        string Nationality
+        string Role
+    }
+
+    STADIUM {
+        int StadiumID PK
+        string Name
+        string Location
+        int Capacity
+    }
+
+    SEASON {
+        int SeasonID PK
+        string LeagueName
+        date StartDate
+        date EndDate
+    }
+
+    MATCH {
+        int MatchID PK
+        date Date
+        time Time
+        int HomeScore
+        int AwayScore
+    }
+
+    CONTRACT {
+        int ContractID PK
+        date StartDate
+        date EndDate
+        float Salary
+    }
+
+    TRANSFER {
+        int TransferID PK
+        date TransferDate
+        float TransferFee
+    }
+
+    PLAYER_MEMBERSHIP {
+        int PlayerID FK
+        int TeamID FK
+        date StartDate
+        date EndDate
+    }
+
+    COACHING_ASSIGNMENT {
+        int CoachID FK
+        int TeamID FK
+        date StartDate
+        date EndDate
+        string Role
+    }
+
+    PLAYER_CONTRACT {
+        int PlayerID FK
+        int TeamID FK
+        int ContractID FK
+        date SigningDate
+    }
+
+    PLAYER_TRANSFER {
+        int PlayerID FK
+        int TeamID FK
+        int TransferID FK
+        string TransferType
+    }
+
+    PLAYER_PERFORMANCE {
+        int PlayerID FK
+        int MatchID FK
+        int MinutesPlayed
+        int Goals
+        int Assists
+        int YellowCards
+        int RedCards
+    }
+
+    PLAYER ||--o{ PLAYER_MEMBERSHIP : "membership"
+    TEAM ||--o{ PLAYER_MEMBERSHIP : "membership"
+    PLAYER ||--o{ PLAYER_CONTRACT : "contract"
+    TEAM ||--o{ PLAYER_CONTRACT : "contract"
+    CONTRACT ||--o{ PLAYER_CONTRACT : "contract"
+    PLAYER ||--o{ PLAYER_TRANSFER : "transfer"
+    TEAM ||--o{ PLAYER_TRANSFER : "transfer"
+    TRANSFER ||--o{ PLAYER_TRANSFER : "transfer"
+    PLAYER ||--o{ PLAYER_PERFORMANCE : "performance"
+    MATCH ||--o{ PLAYER_PERFORMANCE : "performance"
+    COACH ||--o{ COACHING_ASSIGNMENT : "assignment"
+    TEAM ||--o{ COACHING_ASSIGNMENT : "assignment"
+    MATCH ||--|| STADIUM : "venue"
+    MATCH ||--|| SEASON : "season"
+    MATCH ||--|| TEAM : "home_team"
+    MATCH ||--|| TEAM : "away_team"

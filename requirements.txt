@@ -31,7 +31,25 @@ markdown>=3.5.0
 spacy>=3.7.0
 sentence-transformers>=2.2.0
 
-
 # Database (PostgreSQL)
 psycopg2-binary>=2.9.9
 asyncpg>=0.29.0
+
+# ============== Domain RAG Dependencies ==============
+# Vector embeddings for RAG
+# sentence-transformers already included above
+
+# HTTP requests
+requests>=2.31.0
+
+# Data validation
+dataclasses-json>=0.6.0
+
+# Optional: Vector stores (uncomment as needed)
+# faiss-cpu>=1.7.4  # Facebook AI Similarity Search
+# chromadb>=0.4.0   # Chroma vector database
+# qdrant-client>=1.7.0  # Qdrant vector database
+
+# Optional: Advanced NLP (uncomment if needed)
+# langchain>=0.1.0
+# llama-index>=0.10.0
