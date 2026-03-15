@@ -191,28 +191,47 @@ def get_gold_columns(idx, db_path) -> dict:
 
 
 # parse json output
-def parse_json(res: str) -> dict:
-    # lines = res.split('\n')
-    # start_idx, end_idx = -1, -1
-    # for idx in range(0, len(lines)):
-    #     if '```json' in lines[idx]:
-    #         start_idx = idx
-    #         break
-    # if start_idx == -1: return {}
-    # for idx in range(start_idx + 1, len(lines)):
-    #     if '```' in lines[idx]:
-    #         end_idx = idx
-    #         break
-    # if end_idx == -1: return {}
-    # jstr = " ".join(lines[start_idx + 1: end_idx])
-    # return json.loads(jstr)
-    # todo: for debug
+def parse_json(text: str) -> dict:
+    # Try parse JSON inside markdown block first
+    block_match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
+    candidates = []
+    if block_match:
+        candidates.append(block_match.group(1).strip())
+
+    # Also try full text (some models return plain JSON without fences)
+    candidates.append(text.strip())
+
+    for json_string in candidates:
+        if not json_string:
+            continue
+        try:
+            json_data = json.loads(json_string)
+            if isinstance(json_data, dict) and check_selector_response(json_data):
+                return json_data
+        except Exception:
+            continue
+
+    # Last attempt: extract first {...} region and parse it
+    brace_match = re.search(r"\{.*\}", text, re.DOTALL)
+    if brace_match:
+        try:
+            json_data = json.loads(brace_match.group(0))
+            if isinstance(json_data, dict) and check_selector_response(json_data):
+                return json_data
+        except Exception:
+            pass
+
     return {}
 
 
 # check if valid format
 def check_selector_response(json_data: Dict) -> bool:
     FLAGS = ['keep_all', 'drop_all']
+    # Sometimes model returns {"query": "SELECT ..."}; not a selector schema map.
+    # Treat as invalid silently (no noisy logs).
+    if isinstance(json_data, dict) and set(json_data.keys()) == {'query'}:
+        return False
+
     for k, v in json_data.items():
         if isinstance(v, str):
             if v not in FLAGS:
@@ -302,29 +321,7 @@ def save_jsonl_file(path, data):
         print(f"save jsonl file to {path}")
 
 
-def parse_json(text: str) -> dict:
-    # 查找字符串中的 JSON 块
-    start = text.find("```json")
-    end = text.find("```", start + 7)
-    
-    # 如果找到了 JSON 块
-    if start != -1 and end != -1:
-        json_string = text[start + 7: end]
-        
-        try:
-            # 解析 JSON 字符串
-            json_data = json.loads(json_string)
-            valid = check_selector_response(json_data)
-            if valid:
-                return json_data
-            else:
-                return {}
-        except:
-            print(f"error: parse json error!\n")
-            print(f"json_string: {json_string}\n\n")
-            pass
-    
-    return {}
+# NOTE: parse_json is defined earlier in this file.
 
 
 def parse_sql(res: str) -> str:
@@ -344,16 +341,38 @@ def parse_sql(res: str) -> str:
 
 
 def parse_sql_from_string(input_string):
-    sql_pattern = r'```sql(.*?)```'
-    all_sqls = []
-    # 将所有匹配到的都打印出来
-    for match in re.finditer(sql_pattern, input_string, re.DOTALL):
-        all_sqls.append(match.group(1).strip())
-    
-    if all_sqls:
-        return all_sqls[-1]
-    else:
+    if not input_string or not input_string.strip():
         return "error: No SQL found in the input string"
+
+    text = input_string.strip()
+
+    # 1) Prefer SQL fenced blocks
+    sql_blocks = re.findall(r"```(?:sql)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
+    if sql_blocks:
+        sql = sql_blocks[-1].strip()
+        if sql:
+            return re.sub(r"\s+", " ", sql).strip()
+
+    # 2) Remove markdown artifacts / comments and normalize
+    cleaned = text
+    cleaned = re.sub(r"```(?:sql)?", "", cleaned, flags=re.IGNORECASE)
+    cleaned = cleaned.replace("```", "")
+    cleaned = re.sub(r"--[^\n]*", "", cleaned)
+    cleaned = re.sub(r"/\*.*?\*/", "", cleaned, flags=re.DOTALL)
+    cleaned = cleaned.strip()
+
+    # 3) If model returned raw SQL (common with strict prompts), accept it
+    if re.match(r"(?is)^\s*(with|select)\b", cleaned):
+        return re.sub(r"\s+", " ", cleaned).strip()
+
+    # 4) Extract first WITH/SELECT statement from mixed text
+    match = re.search(r"(?is)((?:with\b.*?\bselect\b.*?|select\b.*?))(?:;|$)", cleaned)
+    if match:
+        sql = match.group(1).strip()
+        if sql:
+            return re.sub(r"\s+", " ", sql).strip()
+
+    return "error: No SQL found in the input string"
 
 
 def parse_single_sql(res: str) -> str:  # if do not need decompose, just one code block is OK!
