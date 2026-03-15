@@ -109,9 +109,17 @@ subq_pattern = r"Sub question\s*\d+\s*:"
 
 
 decompose_template_bird = """
-Given a 【Database schema】 description, a knowledge 【Evidence】 and the 【Question】, you need to use valid SQLite and understand the database and knowledge, and then decompose the question into subquestions for text-to-SQL generation.
-When generating SQL, we should always consider constraints:
-【Constraints】
+You are a PostgreSQL expert. Given a 【Database schema】 description, a knowledge 【Evidence】 and the 【Question】, you need to understand the database and knowledge, and then decompose the question into subquestions for text-to-SQL generation.
+
+【CRITICAL OUTPUT RULES】
+- Return ONLY the final executable SQL query
+- Do NOT wrap output in markdown code blocks (no ```sql or ```)
+- Do NOT provide explanations, tutorials, or comments
+- Do NOT generate sample data or INSERT statements
+- Do NOT include any text before or after the SQL
+- Use PostgreSQL syntax (double quotes for identifiers, not backticks)
+
+【SQL Generation Constraints】
 - In `SELECT <column>`, just select needed columns in the 【Question】 without any unnecessary column or value
 - In `FROM <table>` or `JOIN <table>`, do not include unnecessary table
 - If use max or min func, `JOIN <table>` FIRST, THEN use `SELECT MAX(<column>)` or `SELECT MIN(<column>)`
@@ -137,107 +145,14 @@ When generating SQL, we should always consider constraints:
   (NumGE1500, Number of Test Takers Whose Total SAT Scores Are Greater or Equal to 1500. Value examples: [5837, 2125, 0, None, 191]. And Number of Test Takers Whose Total SAT Scores Are Greater or Equal to 1500. . commonsense evidence:. . Excellence Rate = NumGE1500 / NumTstTakr)
 ]
 【Foreign keys】
-frpm.`CDSCode` = satscores.`cds`
+frpm."CDSCode" = satscores."cds"
 【Question】
 List school names of charter schools with an SAT excellence rate over the average.
 【Evidence】
-Charter schools refers to `Charter School (Y/N)` = 1 in the table frpm; Excellence rate = NumGE1500 / NumTstTakr
+Charter schools refers to "Charter School (Y/N)" = 1 in the table frpm; Excellence rate = NumGE1500 / NumTstTakr
 
-
-Decompose the question into sub questions, considering 【Constraints】, and generate the SQL after thinking step by step:
-Sub question 1: Get the average value of SAT excellence rate of charter schools.
-SQL
-```sql
-SELECT AVG(CAST(T2.`NumGE1500` AS REAL) / T2.`NumTstTakr`)
-    FROM frpm AS T1
-    INNER JOIN satscores AS T2
-    ON T1.`CDSCode` = T2.`cds`
-    WHERE T1.`Charter School (Y/N)` = 1
-```
-
-Sub question 2: List out school names of charter schools with an SAT excellence rate over the average.
-SQL
-```sql
-SELECT T2.`sname`
-  FROM frpm AS T1
-  INNER JOIN satscores AS T2
-  ON T1.`CDSCode` = T2.`cds`
-  WHERE T2.`sname` IS NOT NULL
-  AND T1.`Charter School (Y/N)` = 1
-  AND CAST(T2.`NumGE1500` AS REAL) / T2.`NumTstTakr` > (
-    SELECT AVG(CAST(T4.`NumGE1500` AS REAL) / T4.`NumTstTakr`)
-    FROM frpm AS T3
-    INNER JOIN satscores AS T4
-    ON T3.`CDSCode` = T4.`cds`
-    WHERE T3.`Charter School (Y/N)` = 1
-  )
-```
-
-Question Solved.
-
-==========
-
-【Database schema】
-# Table: account
-[
-  (account_id, the id of the account. Value examples: [11382, 11362, 2, 1, 2367].),
-  (district_id, location of branch. Value examples: [77, 76, 2, 1, 39].),
-  (frequency, frequency of the acount. Value examples: ['POPLATEK MESICNE', 'POPLATEK TYDNE', 'POPLATEK PO OBRATU'].),
-  (date, the creation date of the account. Value examples: ['1997-12-29', '1997-12-28'].)
-]
-# Table: client
-[
-  (client_id, the unique number. Value examples: [13998, 13971, 2, 1, 2839].),
-  (gender, gender. Value examples: ['M', 'F']. And F：female . M：male ),
-  (birth_date, birth date. Value examples: ['1987-09-27', '1986-08-13'].),
-  (district_id, location of branch. Value examples: [77, 76, 2, 1, 39].)
-]
-# Table: district
-[
-  (district_id, location of branch. Value examples: [77, 76, 2, 1, 39].),
-  (A4, number of inhabitants . Value examples: ['95907', '95616', '94812'].),
-  (A11, average salary. Value examples: [12541, 11277, 8114].)
-]
-【Foreign keys】
-account.`district_id` = district.`district_id`
-client.`district_id` = district.`district_id`
-【Question】
-What is the gender of the youngest client who opened account in the lowest average salary branch?
-【Evidence】
-Later birthdate refers to younger age; A11 refers to average salary
-
-Decompose the question into sub questions, considering 【Constraints】, and generate the SQL after thinking step by step:
-Sub question 1: What is the district_id of the branch with the lowest average salary?
-SQL
-```sql
-SELECT `district_id`
-  FROM district
-  ORDER BY `A11` ASC
-  LIMIT 1
-```
-
-Sub question 2: What is the youngest client who opened account in the lowest average salary branch?
-SQL
-```sql
-SELECT T1.`client_id`
-  FROM client AS T1
-  INNER JOIN district AS T2
-  ON T1.`district_id` = T2.`district_id`
-  ORDER BY T2.`A11` ASC, T1.`birth_date` DESC 
-  LIMIT 1
-```
-
-Sub question 3: What is the gender of the youngest client who opened account in the lowest average salary branch?
-SQL
-```sql
-SELECT T1.`gender`
-  FROM client AS T1
-  INNER JOIN district AS T2
-  ON T1.`district_id` = T2.`district_id`
-  ORDER BY T2.`A11` ASC, T1.`birth_date` DESC 
-  LIMIT 1 
-```
-Question Solved.
+【Answer】
+SELECT T2."sname" FROM frpm AS T1 INNER JOIN satscores AS T2 ON T1."CDSCode" = T2."cds" WHERE T2."sname" IS NOT NULL AND T1."Charter School (Y/N)" = 1 AND CAST(T2."NumGE1500" AS REAL) / T2."NumTstTakr" > (SELECT AVG(CAST(T4."NumGE1500" AS REAL) / T4."NumTstTakr") FROM frpm AS T3 INNER JOIN satscores AS T4 ON T3."CDSCode" = T4."cds" WHERE T3."Charter School (Y/N)" = 1)
 
 ==========
 
@@ -250,12 +165,20 @@ Question Solved.
 【Evidence】
 {evidence}
 
-Decompose the question into sub questions, considering 【Constraints】, and generate the SQL after thinking step by step:
+【Answer】
 """
 
 
 decompose_template_spider = """
-Given a 【Database schema】 description, and the 【Question】, you need to use valid SQLite and understand the database, and then generate the corresponding SQL.
+You are a PostgreSQL expert. Given a 【Database schema】 description and the 【Question】, you need to understand the database and generate the corresponding SQL.
+
+【CRITICAL OUTPUT RULES】
+- Return ONLY the final executable SQL query
+- Do NOT wrap output in markdown code blocks (no ```sql or ```)
+- Do NOT provide explanations, tutorials, or comments  
+- Do NOT generate sample data or INSERT statements
+- Do NOT include any text before or after the SQL
+- Use PostgreSQL syntax (double quotes for identifiers, not backticks)
 
 ==========
 
@@ -279,16 +202,12 @@ Given a 【Database schema】 description, and the 【Question】, you need to u
   (Year, year. Value examples: ['2015', '2014'].)
 ]
 【Foreign keys】
-concert.`Stadium_ID` = stadium.`Stadium_ID`
+concert."Stadium_ID" = stadium."Stadium_ID"
 【Question】
 Show the stadium name and the number of concerts in each stadium.
 
-SQL
-```sql
-SELECT T1.`Name`, COUNT(*) FROM stadium AS T1 JOIN concert AS T2 ON T1.`Stadium_ID` = T2.`Stadium_ID` GROUP BY T1.`Stadium_ID`
-```
-
-Question Solved.
+【Answer】
+SELECT T1."Name", COUNT(*) FROM stadium AS T1 JOIN concert AS T2 ON T1."Stadium_ID" = T2."Stadium_ID" GROUP BY T1."Stadium_ID"
 
 ==========
 
@@ -316,18 +235,13 @@ Question Solved.
   (Singer_ID, singer id. Value examples: ['3', '6'].)
 ]
 【Foreign keys】
-singer_in_concert.`Singer_ID` = singer.`Singer_ID`
-singer_in_concert.`concert_ID` = concert.`concert_ID`
+singer_in_concert."Singer_ID" = singer."Singer_ID"
+singer_in_concert."concert_ID" = concert."concert_ID"
 【Question】
 Show the name and the release year of the song by the youngest singer.
 
-
-SQL
-```sql
-SELECT `Song_Name`, `Song_release_year` FROM singer WHERE Age = (SELECT MIN(Age) FROM singer)
-```
-
-Question Solved.
+【Answer】
+SELECT "Song_Name", "Song_release_year" FROM singer WHERE "Age" = (SELECT MIN("Age") FROM singer)
 
 ==========
 
@@ -338,15 +252,22 @@ Question Solved.
 【Question】
 {query}
 
-SQL
-
+【Answer】
 """
 
 
 oneshot_template_1 = """
-Given a 【Database schema】 description, a knowledge 【Evidence】 and the 【Question】, you need to use valid SQLite and understand the database and knowledge, and then decompose the question into subquestions for text-to-SQL generation.
-When generating SQL, we should always consider constraints:
-【Constraints】
+You are a PostgreSQL expert. Given a 【Database schema】 description, a knowledge 【Evidence】 and the 【Question】, you need to understand the database and knowledge, and then decompose the question into subquestions for text-to-SQL generation.
+
+【CRITICAL OUTPUT RULES】
+- Return ONLY the final executable SQL query
+- Do NOT wrap output in markdown code blocks (no ```sql or ```)
+- Do NOT provide explanations, tutorials, or comments
+- Do NOT generate sample data or INSERT statements
+- Do NOT include any text before or after the SQL
+- Use PostgreSQL syntax (double quotes for identifiers, not backticks)
+
+【SQL Generation Constraints】
 - In `SELECT <column>`, just select needed columns in the 【Question】 without any unnecessary column or value
 - In `FROM <table>` or `JOIN <table>`, do not include unnecessary table
 - If use max or min func, `JOIN <table>` FIRST, THEN use `SELECT MAX(<column>)` or `SELECT MIN(<column>)`
@@ -427,9 +348,17 @@ Decompose the question into sub questions, considering 【Constraints】, and ge
 
 
 oneshot_template_2 = """
-Given a 【Database schema】 description, a knowledge 【Evidence】 and the 【Question】, you need to use valid SQLite and understand the database and knowledge, and then decompose the question into subquestions for text-to-SQL generation.
-When generating SQL, we should always consider constraints:
-【Constraints】
+You are a PostgreSQL expert. Given a 【Database schema】 description, a knowledge 【Evidence】 and the 【Question】, you need to understand the database and knowledge, and then decompose the question into subquestions for text-to-SQL generation.
+
+【CRITICAL OUTPUT RULES】
+- Return ONLY the final executable SQL query
+- Do NOT wrap output in markdown code blocks (no ```sql or ```)
+- Do NOT provide explanations, tutorials, or comments
+- Do NOT generate sample data or INSERT statements
+- Do NOT include any text before or after the SQL
+- Use PostgreSQL syntax (double quotes for identifiers, not backticks)
+
+【SQL Generation Constraints】
 - In `SELECT <column>`, just select needed columns in the 【Question】 without any unnecessary column or value
 - In `FROM <table>` or `JOIN <table>`, do not include unnecessary table
 - If use max or min func, `JOIN <table>` FIRST, THEN use `SELECT MAX(<column>)` or `SELECT MIN(<column>)`
@@ -516,21 +445,22 @@ Decompose the question into sub questions, considering 【Constraints】, and ge
 
 
 zeroshot_template = """
-Given a 【Database schema】 description, a knowledge 【Evidence】 and the 【Question】, you need to use valid SQLite and understand the database and knowledge, and then generate SQL.
-You can write answer in script blocks, and indicate script type in it, like this:
-```sql
-SELECT column_a
-FROM table_b
-```
-When generating SQL, we should always consider constraints:
-【Constraints】
+You are a PostgreSQL expert. Given a 【Database schema】 description, a knowledge 【Evidence】 and the 【Question】, generate valid PostgreSQL SQL.
+
+【CRITICAL OUTPUT RULES】
+- Return ONLY the raw executable SQL query
+- Do NOT wrap output in markdown code blocks (no ```sql or ```)
+- Do NOT provide explanations, tutorials, or comments
+- Do NOT generate sample data or INSERT statements
+- Do NOT include any text before or after the SQL
+- Use PostgreSQL syntax (double quotes for identifiers if needed, not backticks)
+
+【SQL Generation Constraints】
 - In `SELECT <column>`, just select needed columns in the 【Question】 without any unnecessary column or value
 - In `FROM <table>` or `JOIN <table>`, do not include unnecessary table
 - If use max or min func, `JOIN <table>` FIRST, THEN use `SELECT MAX(<column>)` or `SELECT MIN(<column>)`
 - If [Value examples] of <column> has 'None' or None, use `JOIN <table>` or `WHERE <column> is NOT NULL` is better
 - If use `ORDER BY <column> ASC|DESC`, add `GROUP BY <column>` before to select distinct values
-
-Now let's start!
 
 【Database schema】
 {desc_str}
@@ -545,12 +475,15 @@ Now let's start!
 
 
 baseline_template = """
-Given a 【Database schema】 description, a knowledge 【Evidence】 and the 【Question】, you need to use valid SQLite and understand the database and knowledge, and then generate SQL.
-You can write answer in script blocks, and indicate script type in it, like this:
-```sql
-SELECT column_a
-FROM table_b
-```
+You are a PostgreSQL expert. Given a 【Database schema】 description, a knowledge 【Evidence】 and the 【Question】, generate valid PostgreSQL SQL.
+
+【CRITICAL OUTPUT RULES】
+- Return ONLY the raw executable SQL query
+- Do NOT wrap output in markdown code blocks (no ```sql or ```)
+- Do NOT provide explanations, tutorials, or comments
+- Do NOT generate sample data or INSERT statements
+- Do NOT include any text before or after the SQL
+- Use PostgreSQL syntax (double quotes for identifiers if needed, not backticks)
 
 【Database schema】
 {desc_str}
@@ -563,33 +496,37 @@ FROM table_b
 
 
 refiner_template = """
-【Instruction】
-When executing SQL below, some errors occurred, please fix up SQL based on query and database info.
-Solve the task step by step if you need to. Using SQL format in the code block, and indicate script type in the code block.
-When you find an answer, verify the answer carefully. Include verifiable evidence in your response if possible.
-【Constraints】
+You are a PostgreSQL expert. When executing the SQL below, an error occurred. Fix the SQL based on the query and database info.
+
+【CRITICAL OUTPUT RULES】
+- Return ONLY the corrected executable SQL query
+- Do NOT wrap output in markdown code blocks (no ```sql or ```)
+- Do NOT provide explanations, tutorials, or comments
+- Do NOT generate sample data or INSERT statements
+- Do NOT include any text before or after the SQL
+- Use PostgreSQL syntax (double quotes for identifiers, not backticks)
+
+【SQL Generation Constraints】
 - In `SELECT <column>`, just select needed columns in the 【Question】 without any unnecessary column or value
 - In `FROM <table>` or `JOIN <table>`, do not include unnecessary table
 - If use max or min func, `JOIN <table>` FIRST, THEN use `SELECT MAX(<column>)` or `SELECT MIN(<column>)`
 - If [Value examples] of <column> has 'None' or None, use `JOIN <table>` or `WHERE <column> is NOT NULL` is better
 - If use `ORDER BY <column> ASC|DESC`, add `GROUP BY <column>` before to select distinct values
+
 【Query】
--- {query}
+{query}
 【Evidence】
 {evidence}
-【Database info】
+【Database schema】
 {desc_str}
 【Foreign keys】
 {fk_str}
-【old SQL】
-```sql
+【Failed SQL】
 {sql}
-```
-【SQLite error】 
-{sqlite_error}
-【Exception class】
+【PostgreSQL Error】
+{pg_error}
+【Exception】
 {exception_class}
 
-Now please fixup old SQL and generate new SQL again.
-【correct SQL】
+【Corrected SQL】
 """

@@ -32,20 +32,17 @@ def init_log_path(my_log_path):
 def api_func(prompt:str):
     global MODEL_NAME
     print(f"\nUse OpenAI model: {MODEL_NAME}\n")
-    if 'Llama' in MODEL_NAME:
-        openai.api_version = None
-        openai.api_type = "open_ai"
-        openai.api_key = "EMPTY"
-        response = openai.ChatCompletion.create(
-            model=MODEL_NAME,
-            messages=[{"role": "user", "content": prompt}]
-        )
-    else:
-        response = openai.ChatCompletion.create(
-            engine=MODEL_NAME,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1
-        )
+    
+    # Use 'model' parameter for all OpenAI-compatible APIs (Groq, Gemini, etc.)
+    # 'engine' is only for Azure OpenAI
+    openai.api_version = None
+    openai.api_type = "open_ai"
+    
+    response = openai.ChatCompletion.create(
+        model=MODEL_NAME,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.1
+    )
     text = response['choices'][0]['message']['content'].strip()
     prompt_token = response['usage']['prompt_tokens']
     response_token = response['usage']['completion_tokens']
