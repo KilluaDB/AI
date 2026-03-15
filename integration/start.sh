@@ -27,12 +27,14 @@ if [ ! -f .env ]; then
 # LLM Configuration (Optional - defaults to api_config.py if not set)
 # Uncomment and set these to override api_config.py settings:
 
-# LLM_API_KEY=your-api-key-here
-# LLM_MODEL=your-model-name
-# LLM_API_BASE=your-api-base-url
+# LLM_API_KEY=ollama
+# LLM_MODEL=qwen2.5-coder:7b
+# LLM_API_BASE=http://localhost:11434/v1
 
-# Legacy support (will be used if LLM_API_KEY is not set)
-GROQ_API_KEY=your-api-key-here
+# Local Ollama defaults
+LLM_API_KEY=ollama
+LLM_MODEL=qwen2.5-coder:7b
+LLM_API_BASE=http://localhost:11434/v1
 
 # Service Port
 PORT=5001
@@ -45,11 +47,18 @@ fi
 # Load environment variables
 export $(cat .env | grep -v '^#' | xargs)
 
-# Check for API key (either new LLM_API_KEY or legacy GROQ_API_KEY)
-if [ -z "$LLM_API_KEY" ] && [ -z "$GROQ_API_KEY" ]; then
-    print_info "No API key found in .env - using api_config.py defaults"
-elif [ -n "$GROQ_API_KEY" ] && [ "$GROQ_API_KEY" = "your-api-key-here" ]; then
-    print_info "Default template API key detected - using api_config.py defaults"
+# Check local Ollama defaults
+if [ -z "${LLM_API_KEY:-}" ]; then
+    export LLM_API_KEY="ollama"
+    print_info "LLM_API_KEY not set, defaulting to 'ollama'"
+fi
+if [ -z "${LLM_MODEL:-}" ]; then
+    export LLM_MODEL="qwen2.5-coder:7b"
+    print_info "LLM_MODEL not set, defaulting to 'qwen2.5-coder:7b'"
+fi
+if [ -z "${LLM_API_BASE:-}" ]; then
+    export LLM_API_BASE="http://localhost:11434/v1"
+    print_info "LLM_API_BASE not set, defaulting to Ollama local endpoint"
 fi
 
 # Check Python

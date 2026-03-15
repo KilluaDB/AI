@@ -8,12 +8,12 @@ from core.llm import safe_call_llm, init_log_path
 from core.utils import parse_sql_from_string
 
 class TextToSQLService:
-    def __init__(self, api_key: str, model_name: str = "llama-3.3-70b-versatile"):
+    def __init__(self, api_key: str = "ollama", model_name: str = "qwen2.5-coder:7b", api_base: str = "http://localhost:11434/v1"):
         """Initialize the Text-to-SQL service"""
         from core import api_config
         api_config.MODEL_NAME = model_name
         api_config.openai.api_key = api_key
-        api_config.openai.api_base = "https://api.groq.com/openai/v1"
+        api_config.openai.api_base = api_base
         api_config.openai.api_type = "open_ai"
         
     def get_schema_from_db(self, db_config: dict) -> dict:

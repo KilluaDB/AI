@@ -52,10 +52,10 @@ def get_agent_service():
     if agent_service is None:
         from agent_service import AgentService
         
-        # Get from env vars, or pass None to fall back to api_config.py
-        api_key = os.getenv("LLM_API_KEY") or os.getenv("GROQ_API_KEY") or None
-        model_name = os.getenv("LLM_MODEL") or None
-        api_base = os.getenv("LLM_API_BASE") or None
+        # Get from env vars, with local Ollama defaults
+        api_key = os.getenv("LLM_API_KEY", "ollama")
+        model_name = os.getenv("LLM_MODEL", "qwen2.5-coder:7b")
+        api_base = os.getenv("LLM_API_BASE", "http://localhost:11434/v1")
         
         agent_service = AgentService(
             api_key=api_key,
@@ -312,13 +312,15 @@ async def startup_event():
     """Initialize resources on startup"""
     logger.info("Text-to-SQL Agent Service starting...")
     
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        logger.error("GROQ_API_KEY environment variable not set!")
+    api_key = os.getenv("LLM_API_KEY", "ollama")
+    api_base = os.getenv("LLM_API_BASE", "http://localhost:11434/v1")
+    if api_key == "ollama":
+        logger.info("Using local Ollama dummy API key")
     else:
-        logger.info("GROQ_API_KEY configured")
+        logger.info("Custom LLM_API_KEY configured")
+    logger.info(f"LLM API base: {api_base}")
     
-    model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
+    model = os.getenv("LLM_MODEL", "qwen2.5-coder:7b")
     logger.info(f"LLM Model: {model}")
     logger.info("Service ready to accept requests")
     logger.info("Pipeline: Selector → Decomposer → Refiner")
