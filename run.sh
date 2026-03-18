@@ -7,6 +7,9 @@
 
 # Generate SQL on foo dataset for env test
 # This will get ./outputs/foo/output_bird.json and ./outputs/foo/predict_test.json
+#===============================================#
+echo "Starting Foo dataset prediction..."
+start_time=$(date +%s)
 python ./run.py --dataset_name "bird" \
    --dataset_mode="test" \
    --input_file "./data/foo/test.json" \
@@ -14,12 +17,18 @@ python ./run.py --dataset_name "bird" \
    --tables_json_path "./data/foo/test_tables.json" \
    --output_file "./outputs/foo/output_bird.json" \
    --log_file "./outputs/foo/log.txt"
-
-echo "Generate SQL on env test data done!"
+end_time=$(date +%s)
+elapsed=$(( end_time - start_time ))
+elapsed_minutes=$(( elapsed / 60 ))
+elapsed_seconds=$(( elapsed % 60 ))
+echo "BIRD dev prediction finished in ${elapsed_minutes} minutes and ${elapsed_seconds} seconds."
 
 
 # #################### BIRD dev 【run】count=1534 #########
-# Generate SQL on BIRD dev dataset
+# Generate SQL on BIRD dev dataset (with timing)
+#===============================================#
+# echo "Starting BIRD dev prediction..."
+# start_time=$(date +%s)
 # python ./run.py --dataset_name="bird" \
 #    --dataset_mode="dev" \
 #    --input_file="./data/bird/dev.json" \
@@ -27,9 +36,15 @@ echo "Generate SQL on env test data done!"
 #    --tables_json_path "./data/bird/dev_tables.json" \
 #    --output_file="./outputs/bird/output_bird.json" \
 #    --log_file="./outputs/bird/log.txt"
+# end_time=$(date +%s)
+# elapsed=$(( end_time - start_time ))
+# elapsed_minutes=$(( elapsed / 60 ))
+# elapsed_seconds=$(( elapsed % 60 ))
+# echo "BIRD dev prediction finished in ${elapsed_minutes} minutes and ${elapsed_seconds} seconds."
 
 
 # use gold schema
+#===============================================#
 # python ./run.py --dataset_name="bird" \
 #    --dataset_mode="dev" \
 #    --input_file="./data/bird/dev.json" \
@@ -45,6 +60,7 @@ echo "Generate SQL on env test data done!"
 
 # #################### Spider dev 【run】count=1034 #########
 # Generate SQL on BIRD dev dataset
+#===============================================#
 # python ./run.py --dataset_name "spider" \
 #    --dataset_mode="dev" \
 #    --input_file "./data/spider/dev.json" \
@@ -54,6 +70,7 @@ echo "Generate SQL on env test data done!"
 #    --log_file "./outputs/spider/log.txt"
 
 # #################### Spider dev 【evaluation】EX and EM count=1034 #########
+#===============================================#
 # python ./evaluation/evaluation_spider.py \
 #    --gold "./data/spider/dev_gold.sql" \
 #    --db "./data/spider/database" \

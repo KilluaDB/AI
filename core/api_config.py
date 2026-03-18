@@ -12,9 +12,16 @@ import os
 # MODEL_NAME = 'gemini-2.0-flash' # Gemini
 
 # Ollama (OpenAI-compatible local endpoint)
+
+# OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "")
+# OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+# MODEL_NAME = os.getenv("LLM_MODEL", "qwen2.5-coder:7b")
+
 OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-MODEL_NAME = os.getenv("LLM_MODEL", "qwen2.5-coder:7b")
+# Default to SQL-specialized model; override via LLM_MODEL if needed
+MODEL_NAME = os.getenv("LLM_MODEL", "mannix/defog-llama3-sqlcoder-8b")
+
 
 
 

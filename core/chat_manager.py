@@ -15,6 +15,7 @@ except:
     INIT_LOG__PATH_FUNC = llm.init_log_path
     print(f"Use func from core.llm in chat_manager.py")
 
+import os
 import time
 from pprint import pprint
 
@@ -26,7 +27,11 @@ class ChatManager(object):
         self.log_path = log_path  # path to record important printed content during running
         self.model_name = model_name  # name of base LLM called by agent
         self.dataset_name = dataset_name
-        self.ping_network()
+
+        # Optionally ping the LLM backend when explicitly enabled.
+        # By default, this is disabled to avoid unnecessary or hanging "Hello world" calls.
+        if os.getenv("LLM_PING", "0") == "1":
+            self.ping_network()
         self.chat_group = [
             Selector(data_path=self.data_path, tables_json_path=self.tables_json_path, model_name=self.model_name, dataset_name=dataset_name, lazy=lazy, without_selector=without_selector),
             Decomposer(dataset_name=dataset_name),

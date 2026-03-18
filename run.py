@@ -72,7 +72,7 @@ def init_bird_message(idx: int, item: dict, db_path: str=None, use_gold_schema: 
     return user_message
 
 
-def run_batch(dataset_name, input_file, output_file, db_path, tables_json_path, start_pos=0, log_file=None, dataset_mode='dev', use_gold_schema=False, without_selector=False):
+def run_batch(dataset_name, input_file, output_file, db_path, tables_json_path, start_pos=0, log_file=None, dataset_mode='dev', use_gold_schema=False, without_selector=False, max_samples=None):
     chat_manager = ChatManager(data_path=db_path,
                                tables_json_path=tables_json_path,
                                log_path=log_file,
@@ -126,7 +126,7 @@ def run_batch(dataset_name, input_file, output_file, db_path, tables_json_path, 
         for cur_idx, item in tqdm(enumerate(batch), total=total_num):
             idx = item['question_id']
             db_id = item['db_id']
-            print(f"\n\nprocessing: {cur_idx}/{total_num}\n\n", flush=True)
+            print(f"\n\nprocessing: {cur_idx+1}/{total_num}\n", flush=True)
             if idx not in unfinished_ids: continue
             if dataset_name == "spider":
                 user_message = init_spider_message(idx, item)  # imitate user send a question to system
@@ -147,7 +147,9 @@ def run_batch(dataset_name, input_file, output_file, db_path, tables_json_path, 
                 print(f"Exception: {e}, sleep 20 seconds.", flush=True)
                 time.sleep(20)
                 # raise Exception(str(e))
-            print(f"\n\ndeal {cur_idx+1}/{total_num} done!\n\n")
+
+            # print(f"deal {cur_idx+1}/{total_num} done!")
+            print("=" * 80)
         print(f"Result dump into {output_file}", file=sys.stdout, flush=True)
 
     # export evaluation results

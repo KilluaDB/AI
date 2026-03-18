@@ -52,9 +52,9 @@ def get_agent_service():
     if agent_service is None:
         from agent_service import AgentService
         
-        # Get from env vars, with local Ollama defaults
+        # Get from env vars, with local Ollama + SQLCoder defaults
         api_key = os.getenv("LLM_API_KEY", "ollama")
-        model_name = os.getenv("LLM_MODEL", "qwen2.5-coder:7b")
+        model_name = os.getenv("LLM_MODEL", "mannix/defog-llama3-sqlcoder-8b")
         api_base = os.getenv("LLM_API_BASE", "http://localhost:11434/v1")
         
         agent_service = AgentService(
@@ -320,7 +320,7 @@ async def startup_event():
         logger.info("Custom LLM_API_KEY configured")
     logger.info(f"LLM API base: {api_base}")
     
-    model = os.getenv("LLM_MODEL", "qwen2.5-coder:7b")
+    model = os.getenv("LLM_MODEL", "mannix/defog-llama3-sqlcoder-8b")
     logger.info(f"LLM Model: {model}")
     logger.info("Service ready to accept requests")
     logger.info("Pipeline: Selector → Decomposer → Refiner")

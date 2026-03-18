@@ -8,7 +8,7 @@ from core.llm import safe_call_llm, init_log_path
 from core.utils import parse_sql_from_string
 
 class TextToSQLService:
-    def __init__(self, api_key: str = "ollama", model_name: str = "qwen2.5-coder:7b", api_base: str = "http://localhost:11434/v1"):
+    def __init__(self, api_key: str = "ollama", model_name: str = "mannix/defog-llama3-sqlcoder-8b", api_base: str = "http://localhost:11434/v1"):
         """Initialize the Text-to-SQL service"""
         from core import api_config
         api_config.MODEL_NAME = model_name

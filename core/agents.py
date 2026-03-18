@@ -416,7 +416,8 @@ class Selector(BaseAgent):
     def _get_db_desc_str(self,
                          db_id: str,
                          extracted_schema: dict,
-                         use_gold_schema: bool = False) -> List[str]:
+                         use_gold_schema: bool = False,
+                         verbose: bool = False) -> List[str]:
         """
         Add foreign keys, and value descriptions of focused columns.
         :param db_id: name of sqlite database
@@ -444,7 +445,8 @@ class Selector(BaseAgent):
         # pprint(extracted_schema)
         # print()
 
-        print(f"db_id: {db_id}")
+        if verbose:
+            print(f"db_id: {db_id}")
         # For selector recall and compression rate calculation
         chosen_db_schem_dict = {} # {table_name: ['col_a', 'col_b'], ..}
         for (table_name, columns_desc), (_, columns_val), (_, fk_info), (_, pk_info) in \
@@ -468,7 +470,11 @@ class Selector(BaseAgent):
             new_columns_desc = []
             new_columns_val = []
 
-            print(f"table_name: {table_name}")
+            if verbose:
+                print(f"table_name: {table_name}")
+
+        if verbose:
+            print()
             if table_decision == "drop_all":
                 new_columns_desc = deepcopy(columns_desc[:6])
                 new_columns_val = deepcopy(columns_val[:6])
@@ -566,7 +572,12 @@ class Selector(BaseAgent):
         use_gold_schema = False
         if ext_sch:
             use_gold_schema = True
-        db_schema, db_fk, chosen_db_schem_dict = self._get_db_desc_str(db_id=db_id, extracted_schema=ext_sch, use_gold_schema=use_gold_schema)
+        db_schema, db_fk, chosen_db_schem_dict = self._get_db_desc_str(
+            db_id=db_id,
+            extracted_schema=ext_sch,
+            use_gold_schema=use_gold_schema,
+            verbose=False
+        )
         need_prune = self._is_need_prune(db_id, db_schema)
         if self.without_selector:
             need_prune = False
@@ -579,7 +590,12 @@ class Selector(BaseAgent):
                 raw_extracted_schema_dict = {}
             
             print(f"query: {message['query']}\n")
-            db_schema_str, db_fk, chosen_db_schem_dict = self._get_db_desc_str(db_id=db_id, extracted_schema=raw_extracted_schema_dict)
+            db_schema_str, db_fk, chosen_db_schem_dict = self._get_db_desc_str(
+                db_id=db_id,
+                extracted_schema=raw_extracted_schema_dict,
+                use_gold_schema=False,
+                verbose=True
+            )
 
             message['extracted_schema'] = raw_extracted_schema_dict
             message['chosen_db_schem_dict'] = chosen_db_schem_dict
@@ -726,11 +742,14 @@ class Refiner(BaseAgent):
                error_info: dict) -> dict:
         
         sql_arg = add_prefix(error_info.get('sql'))
-        sqlite_error = error_info.get('sqlite_error')
-        exception_class = error_info.get('exception_class')
-        prompt = refiner_template.format(query=query, evidence=evidence, desc_str=schema_info, \
-                                       fk_str=fk_info, sql=sql_arg, sqlite_error=sqlite_error, \
-                                        exception_class=exception_class)
+        # Template uses {pg_error}; pass SQLite error message for display
+        pg_error = error_info.get('sqlite_error', '')
+        exception_class = error_info.get('exception_class', '')
+        prompt = refiner_template.format(
+            query=query, evidence=evidence, desc_str=schema_info,
+            fk_str=fk_info, sql=sql_arg, pg_error=pg_error,
+            exception_class=exception_class
+        )
 
         word_info = extract_world_info(self._message)
         reply = LLM_API_FUC(prompt, **word_info)
@@ -763,13 +782,30 @@ class Refiner(BaseAgent):
             message['send_to'] = SYSTEM_NAME
             return
         
+        # Always initialize error_info so downstream logic is safe even on timeout/exception
         is_timeout = False
+        error_info = {
+            "sql": str(old_sql),
+            "data": None,
+            "sqlite_error": "",
+            "exception_class": ""
+        }
         try:
             error_info = self._execute_sql(old_sql, db_id)
+        except FunctionTimedOut:
+            # SQL execution hit the global timeout; skip refinement but keep the pipeline alive
+            is_timeout = True
+            error_info["sqlite_error"] = "execution timeout"
+            error_info["exception_class"] = "FunctionTimedOut"
+            idx = message.get("idx", None)
+            print(f"[Refiner] Timeout while executing SQL (idx={idx}, db_id={db_id})")
         except Exception as e:
+            # Any unexpected error from _execute_sql should not crash the whole run
             is_timeout = True
-        except FunctionTimedOut as fto:
-            is_timeout = True
+            error_info["sqlite_error"] = str(e)
+            error_info["exception_class"] = type(e).__name__
+            idx = message.get("idx", None)
+            print(f"[Refiner] Exception while executing SQL (idx={idx}, db_id={db_id}): {e}")
         
         is_need = self._is_need_refine(error_info)
         # is_need = False

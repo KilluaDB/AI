@@ -13,6 +13,9 @@ api_trace_json_path = None
 total_prompt_tokens = 0
 total_response_tokens = 0
 
+# ensure we only print the model banner once per process
+_model_banner_printed = False
+
 
 def init_log_path(my_log_path):
     global total_prompt_tokens
@@ -31,17 +34,25 @@ def init_log_path(my_log_path):
 
 def api_func(prompt:str):
     global MODEL_NAME
-    print(f"\nUse OpenAI model: {MODEL_NAME}\n")
+    global _model_banner_printed
+
+    if not _model_banner_printed:
+        print(f"\nUse OpenAI model: {MODEL_NAME}\n")
+        _model_banner_printed = True
     
     # Use 'model' parameter for all OpenAI-compatible APIs (Groq, Gemini, etc.)
     # 'engine' is only for Azure OpenAI
     openai.api_version = None
     openai.api_type = "open_ai"
     
+    # max_tokens caps output to avoid unbounded or looping completions (e.g. SQLCoder on chatty prompts)
+    # request_timeout fails fast if the backend hangs
     response = openai.ChatCompletion.create(
         model=MODEL_NAME,
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.1
+        temperature=0.1,
+        max_tokens=2048,
+        request_timeout=120,
     )
     text = response['choices'][0]['message']['content'].strip()
     prompt_token = response['usage']['prompt_tokens']
@@ -65,8 +76,12 @@ def safe_call_llm(input_prompt, **kwargs) -> str:
             if log_path is None:
                 # print(input_prompt)
                 sys_response, prompt_token, response_token = api_func(input_prompt)
-                print(f"\nsys_response: \n{sys_response}")
-                print(f'\n prompt_token,response_token: {prompt_token} {response_token}\n')
+                source = kwargs.get('send_to', 'UnknownAgent')
+                idx = kwargs.get('idx', 'N/A')
+                db_id = kwargs.get('db_id', 'N/A')
+                print(f"\n[{source}] idx={idx}, db_id={db_id}\n")
+                print(f"sys_response: \n{sys_response}")
+                print(f'\nprompt_token,response_token: {prompt_token} {response_token}\n')
             else:
                 # check log_path and api_trace_json_path is not None
                 if (log_path is None) or (api_trace_json_path is None):
@@ -76,9 +91,14 @@ def safe_call_llm(input_prompt, **kwargs) -> str:
                     print(input_prompt, file=log_fp)
                     print('\n' + f'='*20 +'\n', file=log_fp)
                     sys_response, prompt_token, response_token = api_func(input_prompt)
+                    source = kwargs.get('send_to', 'UnknownAgent')
+                    idx = kwargs.get('idx', 'N/A')
+                    db_id = kwargs.get('db_id', 'N/A')
+                    print(f"[{source}] idx={idx}, db_id={db_id}\n", file=log_fp)
+                    print(f"[{source}] idx={idx}, db_id={db_id}")
                     print(sys_response, file=log_fp)
                     print(f'\n prompt_token,response_token: {prompt_token} {response_token}\n', file=log_fp)
-                    print(f'\n prompt_token,response_token: {prompt_token} {response_token}\n')
+                    print(f'prompt_token,response_token: {prompt_token} {response_token}')
 
                     if len(world_dict) > 0:
                         world_dict = {}
@@ -109,7 +129,7 @@ def safe_call_llm(input_prompt, **kwargs) -> str:
                     world_json_str = ''
 
                     print(f'\n total_prompt_tokens,total_response_tokens: {total_prompt_tokens} {total_response_tokens}\n', file=log_fp)
-                    print(f'\n total_prompt_tokens,total_response_tokens: {total_prompt_tokens} {total_response_tokens}\n')
+                    print(f'total_prompt_tokens,total_response_tokens: {total_prompt_tokens} {total_response_tokens}\n')
             return sys_response
         except Exception as ex:
             print(ex)

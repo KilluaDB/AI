@@ -28,12 +28,12 @@ if [ ! -f .env ]; then
 # Uncomment and set these to override api_config.py settings:
 
 # LLM_API_KEY=ollama
-# LLM_MODEL=qwen2.5-coder:7b
+# LLM_MODEL=mannix/defog-llama3-sqlcoder-8b
 # LLM_API_BASE=http://localhost:11434/v1
 
 # Local Ollama defaults
 LLM_API_KEY=ollama
-LLM_MODEL=qwen2.5-coder:7b
+LLM_MODEL=mannix/defog-llama3-sqlcoder-8b
 LLM_API_BASE=http://localhost:11434/v1
 
 # Service Port
@@ -53,8 +53,8 @@ if [ -z "${LLM_API_KEY:-}" ]; then
     print_info "LLM_API_KEY not set, defaulting to 'ollama'"
 fi
 if [ -z "${LLM_MODEL:-}" ]; then
-    export LLM_MODEL="qwen2.5-coder:7b"
-    print_info "LLM_MODEL not set, defaulting to 'qwen2.5-coder:7b'"
+    export LLM_MODEL="mannix/defog-llama3-sqlcoder-8b"
+    print_info "LLM_MODEL not set, defaulting to 'mannix/defog-llama3-sqlcoder-8b'"
 fi
 if [ -z "${LLM_API_BASE:-}" ]; then
     export LLM_API_BASE="http://localhost:11434/v1"

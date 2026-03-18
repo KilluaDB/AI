@@ -227,9 +227,15 @@ def parse_json(text: str) -> dict:
 # check if valid format
 def check_selector_response(json_data: Dict) -> bool:
     FLAGS = ['keep_all', 'drop_all']
-    # Sometimes model returns {"query": "SELECT ..."}; not a selector schema map.
-    # Treat as invalid silently (no noisy logs).
-    if isinstance(json_data, dict) and set(json_data.keys()) == {'query'}:
+    # Model sometimes returns answer format instead of selector schema (table -> keep_all/drop_all/columns).
+    # Treat as invalid silently so we fall back to keep_all for all tables.
+    if not isinstance(json_data, dict):
+        return False
+    keys = set(json_data.keys())
+    if keys == {'query'}:
+        return False
+    if 'sql' in keys or 'thoughts' in keys:
+        # Answer-style response (thoughts + sql + display_type); not a schema map.
         return False
 
     for k, v in json_data.items():

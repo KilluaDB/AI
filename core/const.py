@@ -125,6 +125,8 @@ You are a PostgreSQL expert. Given a 【Database schema】 description, a knowle
 - If use max or min func, `JOIN <table>` FIRST, THEN use `SELECT MAX(<column>)` or `SELECT MIN(<column>)`
 - If [Value examples] of <column> has 'None' or None, use `JOIN <table>` or `WHERE <column> is NOT NULL` is better
 - If use `ORDER BY <column> ASC|DESC`, add `GROUP BY <column>` before to select distinct values
+- Use 【Evidence】 to map phrases in the question to exact column names and filter values (e.g. continuation schools, direct charter-funded, district vs county).
+- If the question mentions a specific organization or type (e.g. a county office of education, or a funding type), check 【Evidence】 for which column to filter on.
 
 ==========
 

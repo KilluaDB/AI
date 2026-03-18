@@ -120,8 +120,11 @@ def compute_acc_by_diff(exec_results, diff_json_path):
         if difficulty == 'challenging':
             challenging_results.append(exec_results[i])
 
-    simple_acc = sum([res['res'] for res in simple_results])/len(simple_results)
-    
+    if len(simple_results) == 0:
+        simple_acc = 0.0
+    else:
+        simple_acc = sum([res['res'] for res in simple_results]) / len(simple_results)
+
     if len(moderate_results) == 0:
         moderate_acc = 0
     else:
@@ -180,13 +183,14 @@ if __name__ == '__main__':
         os.makedirs(out_dir, exist_ok=True)
     result_json_path = os.path.join(out_dir, f'eval_result_{args.data_mode}.json')
     
-    # relocate idx of exec_result
+    # relocate idx of exec_result (use actual gt_queries for gold, not diff_json which may have empty SQL)
     raw_json_data = load_json(args.diff_json_path)
     pred_sqls = [replace_multiple_spaces(s) for s in pred_queries]
+    gt_sqls = [replace_multiple_spaces(s) for s in gt_queries]
     result_json_lst = []
     for i, item in enumerate(raw_json_data):
         item['pred'] = pred_sqls[i]
-        item['gold'] = replace_multiple_spaces(item.get('SQL', ''))
+        item['gold'] = gt_sqls[i] if i < len(gt_sqls) else item.get('SQL', '')
         if 'SQL' in item:
             del item['SQL']
         item['res'] = exec_result[i]['res']

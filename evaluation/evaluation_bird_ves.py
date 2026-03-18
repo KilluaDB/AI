@@ -50,9 +50,13 @@ def iterated_execute_sql(predicted_sql, ground_truth, db_path, iterate_num):
         for i in range(iterate_num):
             predicted_time = execute_sql(predicted_sql, db_path)
             ground_truth_time = execute_sql(ground_truth, db_path)
-            diff_list.append(ground_truth_time / predicted_time)
+            # Avoid division by zero when predicted_time is 0 (e.g. very fast query)
+            if predicted_time > 1e-9:
+                diff_list.append(ground_truth_time / predicted_time)
         processed_diff_list = clean_abnormal(diff_list)
-        time_ratio = sum(processed_diff_list) / len(processed_diff_list)
+        if len(processed_diff_list) > 0:
+            time_ratio = sum(processed_diff_list) / len(processed_diff_list)
+        # else: all samples filtered as outliers or all predicted_time ~0, leave time_ratio = 0
     return time_ratio
 
 
@@ -140,13 +144,23 @@ def load_json(dir):
 def compute_ves_by_diff(exec_results, diff_json_path):
     num_queries = len(exec_results)
     contents = load_json(diff_json_path)
+    # Support both list of items and dict with 'data'/'questions' or keyed by index
+    if isinstance(contents, dict):
+        contents = contents.get('data') or contents.get('questions') or list(contents.values())
+    if not isinstance(contents, list):
+        raise ValueError(f'diff_json_path must be a JSON list or dict; got {type(contents).__name__}')
     simple_results, moderate_results, challenging_results = [], [], []
     for i, content in enumerate(contents):
-        if content['difficulty'] == 'simple':
+        if i >= num_queries:
+            break
+        if not isinstance(content, dict):
+            continue
+        difficulty = content.get('difficulty', 'simple')
+        if difficulty == 'simple':
             simple_results.append(exec_results[i])
-        if content['difficulty'] == 'moderate':
+        elif difficulty == 'moderate':
             moderate_results.append(exec_results[i])
-        if content['difficulty'] == 'challenging':
+        elif difficulty == 'challenging':
             challenging_results.append(exec_results[i])
     simple_ves = compute_ves(simple_results)
     moderate_ves = compute_ves(moderate_results)
