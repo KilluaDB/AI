@@ -30,7 +30,12 @@ OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "https://models.github.ai/inferen
 
 # Prefer GitHub PAT for authentication (falls back to OPENAI_API_KEY if set).
 # NOTE: Hard-coding tokens is unsafe; rotate/revoke any exposed PATs.
+
 GH_API_KEY = os.getenv("GITHUB_PAT", "")
+
+# GH_API_KEY = os.getenv("GITHUB_PAT", "")  # Hassan
+GH_API_KEY = os.getenv("GITHUB_PAT", "")    # Atef
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", GH_API_KEY)
 
 # Default model for GitHub Models; override via LLM_MODEL if needed
