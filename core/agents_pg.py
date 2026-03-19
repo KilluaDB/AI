@@ -4,6 +4,7 @@ PostgreSQL-adapted agents for text-to-SQL generation.
 This module replaces SQLite-specific code with PostgreSQL-compatible queries.
 """
 import os
+import re
 import sys
 import json
 import time
@@ -733,9 +734,49 @@ class Refiner(BaseAgent):
                 "exception_class": str(type(e).__name__)
             }
 
+    def _extract_identifiers_from_sql(self, sql: str) -> set:
+        """Extract quoted and unquoted identifiers used in SQL."""
+        identifiers = set()
+        for m in re.finditer(r'"([^"]+)"', sql):
+            identifiers.add(m.group(1).lower())
+        for kw in ('SELECT', 'FROM', 'JOIN', 'WHERE', 'GROUP', 'ORDER',
+                    'HAVING', 'ON', 'AND', 'OR', 'AS', 'BY', 'NOT',
+                    'NULL', 'IS', 'IN', 'BETWEEN', 'LIKE', 'INNER',
+                    'LEFT', 'RIGHT', 'OUTER', 'CROSS', 'DISTINCT',
+                    'COUNT', 'SUM', 'AVG', 'MAX', 'MIN', 'CAST',
+                    'REAL', 'INTEGER', 'TEXT', 'NULLIF', 'COALESCE',
+                    'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'DESC',
+                    'ASC', 'LIMIT', 'OFFSET', 'OVER', 'PARTITION',
+                    'RANK', 'ROW_NUMBER', 'DENSE_RANK', 'WITH',
+                    'UNION', 'ALL', 'EXISTS', 'TRUE', 'FALSE',
+                    'TIMESTAMP', 'TO_CHAR', 'EXTRACT'):
+            pass  # just defining the set below
+        return identifiers
+
+    def _check_columns_exist(self, sql: str, schema_desc: str) -> str:
+        """
+        Validate that quoted identifiers in *sql* actually appear in
+        *schema_desc* (the schema string shown to the LLM).
+        Returns an error message for the first mismatch, or '' if all ok.
+        """
+        if not schema_desc:
+            return ''
+        schema_lower = schema_desc.lower()
+        for m in re.finditer(r'"([^"]+)"', sql):
+            ident = m.group(1)
+            if ident.lower() in ('real', 'integer', 'text', 'timestamp',
+                                  'date', 'boolean', 'numeric', 'float',
+                                  'varchar', 'bigint', 'smallint',
+                                  'average_score'):
+                continue
+            if ident.lower() not in schema_lower:
+                return (f'Column or table "{ident}" does not exist in the '
+                        f'database schema. Check the schema and use only '
+                        f'columns that appear there.')
+        return ''
+
     def _is_need_refine(self, exec_result: dict) -> bool:
         """Check if SQL needs refinement based on execution result."""
-        # Spider has dirty values, even gold SQL may return None
         if self.dataset_name == 'spider':
             return 'data' not in exec_result
         
@@ -829,6 +870,14 @@ class Refiner(BaseAgent):
             logger.error(f"SQL execution error: {e}")
         
         is_need = self._is_need_refine(error_info) if error_info else True
+        
+        if not is_need and schema_info:
+            col_err = self._check_columns_exist(old_sql, schema_info)
+            if col_err:
+                logger.warning(f"Column mismatch detected: {col_err}")
+                is_need = True
+                error_info['pg_error'] = col_err
+                error_info['exception_class'] = 'ColumnNotFound'
         
         logger.info(f"Needs refinement: {is_need}, Timeout: {is_timeout}")
         

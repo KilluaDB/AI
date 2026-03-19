@@ -34,7 +34,7 @@ GH_API_KEY = os.getenv("GITHUB_PAT", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", GH_API_KEY)
 
 # Default model for GitHub Models; override via LLM_MODEL if needed
-MODEL_NAME = os.getenv("LLM_MODEL", "gpt-4o-mini")
+MODEL_NAME = os.getenv("LLM_MODEL", "gpt-4o")
 
 
 

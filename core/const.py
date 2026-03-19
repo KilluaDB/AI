@@ -127,6 +127,13 @@ You are a PostgreSQL expert. Given a 【Database schema】 description, a knowle
 - If use `ORDER BY <column> ASC|DESC`, add `GROUP BY <column>` before to select distinct values
 - Use 【Evidence】 to map phrases in the question to exact column names and filter values (e.g. continuation schools, direct charter-funded, district vs county).
 - If the question mentions a specific organization or type (e.g. a county office of education, or a funding type), check 【Evidence】 for which column to filter on.
+- ONLY use column names that appear in the 【Database schema】 above. Never invent or guess column names.
+- When 【Evidence】 maps a phrase to a specific column, use that EXACT column. Do not substitute a similar-sounding column from another table.
+- If multiple tables have a "name" column, choose the one from the table that owns the data being asked about.
+- Prefer simple JOINs. Only add a table to FROM/JOIN if the question actually needs columns from it.
+- Use LEFT JOIN (not INNER JOIN) when the question asks about ALL records, even those without matches in the joined table.
+- When the question says "rank", use RANK() OVER (ORDER BY ...) or ROW_NUMBER() window functions.
+- Use NULLIF(divisor, 0) to prevent division by zero errors.
 
 ==========
 
@@ -154,7 +161,59 @@ List school names of charter schools with an SAT excellence rate over the averag
 Charter schools refers to "Charter School (Y/N)" = 1 in the table frpm; Excellence rate = NumGE1500 / NumTstTakr
 
 【Answer】
-SELECT T2."sname" FROM frpm AS T1 INNER JOIN satscores AS T2 ON T1."CDSCode" = T2."cds" WHERE T2."sname" IS NOT NULL AND T1."Charter School (Y/N)" = 1 AND CAST(T2."NumGE1500" AS REAL) / T2."NumTstTakr" > (SELECT AVG(CAST(T4."NumGE1500" AS REAL) / T4."NumTstTakr") FROM frpm AS T3 INNER JOIN satscores AS T4 ON T3."CDSCode" = T4."cds" WHERE T3."Charter School (Y/N)" = 1)
+SELECT T2."sname" FROM frpm AS T1 INNER JOIN satscores AS T2 ON T1."CDSCode" = T2."cds" WHERE T2."sname" IS NOT NULL AND T1."Charter School (Y/N)" = 1 AND CAST(T2."NumGE1500" AS REAL) / NULLIF(T2."NumTstTakr", 0) > (SELECT AVG(CAST(T4."NumGE1500" AS REAL) / NULLIF(T4."NumTstTakr", 0)) FROM frpm AS T3 INNER JOIN satscores AS T4 ON T3."CDSCode" = T4."cds" WHERE T3."Charter School (Y/N)" = 1)
+
+==========
+
+【Database schema】
+# Table: schools
+[
+  (CDSCode, CDS code, unique identifier. Value examples: ['01100170109835'].),
+  (School, school name. Value examples: ['Lincoln High', 'Hayward High'].),
+  (FundingType, funding type. Value examples: ['Locally funded', 'Directly funded'].),
+  (DOC, district ownership code. Value examples: [52, 54, 56].),
+  (OpenDate, date school opened. Value examples: ['1980-07-01', '1995-09-01'].),
+  (ClosedDate, date school closed. Value examples: [None, '1999-06-30'].),
+  (Phone, phone number. Value examples: ['5105551234', None].)
+]
+# Table: satscores
+[
+  (cds, CDS code. Value examples: ['01100170109835'].),
+  (sname, school name. Value examples: ['Lincoln High'].),
+  (AvgScrWrite, average writing score. Value examples: [520, 480, None].)
+]
+【Foreign keys】
+schools."CDSCode" = satscores."cds"
+【Question】
+List school names and writing scores for schools opened after 1991 or closed before 2000. Include their phone numbers if available.
+【Evidence】
+Communication number refers to phone number.
+
+【Answer】
+SELECT T1."School", T2."AvgScrWrite", T1."Phone" FROM schools AS T1 LEFT JOIN satscores AS T2 ON T1."CDSCode" = T2."cds" WHERE EXTRACT(YEAR FROM CAST(T1."OpenDate" AS TIMESTAMP)) > 1991 OR EXTRACT(YEAR FROM CAST(T1."ClosedDate" AS TIMESTAMP)) < 2000
+
+==========
+
+【Database schema】
+# Table: schools
+[
+  (CDSCode, CDS code. Value examples: ['01100170109835'].),
+  (CharterNum, charter number. Value examples: ['0001', '0335', None].)
+]
+# Table: satscores
+[
+  (cds, CDS code. Value examples: ['01100170109835'].),
+  (AvgScrWrite, average writing score. Value examples: [520, 510, 499].)
+]
+【Foreign keys】
+schools."CDSCode" = satscores."cds"
+【Question】
+Rank schools by their average writing score where the score is greater than 499, showing their charter numbers.
+【Evidence】
+Valid charter number means the number is not null.
+
+【Answer】
+SELECT T1."CharterNum", T2."AvgScrWrite", RANK() OVER (ORDER BY T2."AvgScrWrite" DESC) AS "WritingRank" FROM schools AS T1 INNER JOIN satscores AS T2 ON T1."CDSCode" = T2."cds" WHERE T2."AvgScrWrite" > 499 AND T1."CharterNum" IS NOT NULL
 
 ==========
 
