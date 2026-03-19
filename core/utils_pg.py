@@ -79,13 +79,14 @@ def get_pg_connection(db_config: Dict[str, Any]):
     )
 
 
-def get_used_tables(sql: str, db_config: Dict[str, Any]) -> dict:
+def get_used_tables(sql: str, db_config: Dict[str, Any], schema: str = 'public') -> dict:
     """
     Get tables used in SQL query and their columns.
     
     Args:
         sql: SQL query string
         db_config: PostgreSQL connection config
+        schema: PostgreSQL schema name (typically the db_id)
     
     Returns:
         Dict mapping table names to their columns
@@ -100,9 +101,9 @@ def get_used_tables(sql: str, db_config: Dict[str, Any]) -> dict:
         cursor.execute("""
             SELECT column_name 
             FROM information_schema.columns 
-            WHERE table_name = %s AND table_schema = 'public'
+            WHERE table_name = %s AND table_schema = %s
             ORDER BY ordinal_position
-        """, (table_name,))
+        """, (table_name, schema))
         columns = cursor.fetchall()
         column_names = [col[0] for col in columns]
         sch[table_name] = {
@@ -115,12 +116,13 @@ def get_used_tables(sql: str, db_config: Dict[str, Any]) -> dict:
     return sch
 
 
-def get_all_tables(db_config: Dict[str, Any]) -> dict:
+def get_all_tables(db_config: Dict[str, Any], schema: str = 'public') -> dict:
     """
     Get all tables and their columns from PostgreSQL database.
     
     Args:
         db_config: PostgreSQL connection config
+        schema: PostgreSQL schema name (typically the db_id)
     
     Returns:
         Dict mapping table names to their columns
@@ -128,12 +130,11 @@ def get_all_tables(db_config: Dict[str, Any]) -> dict:
     conn = get_pg_connection(db_config)
     cursor = conn.cursor()
     
-    # Get all table names
     cursor.execute("""
         SELECT table_name 
         FROM information_schema.tables 
-        WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-    """)
+        WHERE table_schema = %s AND table_type = 'BASE TABLE'
+    """, (schema,))
     tables = cursor.fetchall()
     table_names = [t[0] for t in tables]
     
@@ -142,9 +143,9 @@ def get_all_tables(db_config: Dict[str, Any]) -> dict:
         cursor.execute("""
             SELECT column_name 
             FROM information_schema.columns 
-            WHERE table_name = %s AND table_schema = 'public'
+            WHERE table_name = %s AND table_schema = %s
             ORDER BY ordinal_position
-        """, (table_name,))
+        """, (table_name, schema))
         columns = cursor.fetchall()
         column_names = [col[0] for col in columns]
         sch[table_name] = {
@@ -157,12 +158,13 @@ def get_all_tables(db_config: Dict[str, Any]) -> dict:
     return sch
 
 
-def get_schema_info(db_config: Dict[str, Any]) -> Dict[str, List[Dict]]:
+def get_schema_info(db_config: Dict[str, Any], schema_name: str = 'public') -> Dict[str, List[Dict]]:
     """
     Get complete schema information from PostgreSQL database.
     
     Args:
         db_config: PostgreSQL connection config
+        schema_name: PostgreSQL schema name (typically the db_id)
     
     Returns:
         Dict mapping table names to list of column info dicts
@@ -170,12 +172,11 @@ def get_schema_info(db_config: Dict[str, Any]) -> Dict[str, List[Dict]]:
     conn = get_pg_connection(db_config)
     cursor = conn.cursor()
     
-    # Get all tables
     cursor.execute("""
         SELECT table_name 
         FROM information_schema.tables 
-        WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-    """)
+        WHERE table_schema = %s AND table_type = 'BASE TABLE'
+    """, (schema_name,))
     tables = [row[0] for row in cursor.fetchall()]
     
     schema = {}
@@ -183,9 +184,9 @@ def get_schema_info(db_config: Dict[str, Any]) -> Dict[str, List[Dict]]:
         cursor.execute("""
             SELECT column_name, data_type, is_nullable, column_default
             FROM information_schema.columns 
-            WHERE table_name = %s AND table_schema = 'public'
+            WHERE table_name = %s AND table_schema = %s
             ORDER BY ordinal_position
-        """, (table,))
+        """, (table, schema_name))
         
         columns = []
         for row in cursor.fetchall():

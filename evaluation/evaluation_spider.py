@@ -21,11 +21,11 @@
 
 import os
 import json
-import sqlite3
 import argparse
 
 from process_sql import get_schema, Schema, get_sql
 from exec_eval import eval_exec_match
+from db_utils import get_pg_connection, normalize_pg_sql
 
 # Flag to disable value evaluation
 DISABLE_VALUE = True
@@ -431,13 +431,17 @@ class Evaluator:
         return res
 
 
-def isValidSQL(sql, db):
-    conn = sqlite3.connect(db)
+def isValidSQL(sql, db=None):
+    conn = get_pg_connection(schema=db)
     cursor = conn.cursor()
     try:
-        cursor.execute(sql)
-    except:
+        cursor.execute(normalize_pg_sql(sql))
+    except Exception:
+        cursor.close()
+        conn.close()
         return False
+    cursor.close()
+    conn.close()
     return True
 
 
@@ -586,8 +590,7 @@ def evaluate(gold, predict, db_dir, etype, kmaps, plug_value, keep_distinct, pro
             gold_pred_map['db_id'] = db
 
             db_name = db
-            db = os.path.join(db_dir, db, db + ".sqlite")
-            schema = Schema(get_schema(db))
+            schema = Schema(get_schema())
             g_sql = get_sql(schema, g_str)
             hardness = evaluator.eval_hardness(g_sql)
             if idx > 3:

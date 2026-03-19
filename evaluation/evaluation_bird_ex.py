@@ -3,9 +3,9 @@ import re
 import sys
 import json
 import argparse
-import sqlite3
 import multiprocessing as mp
 from func_timeout import func_timeout, FunctionTimedOut
+from db_utils import get_pg_connection, normalize_pg_sql
 
 def replace_multiple_spaces(text):
     # 定义正则表达式，匹配多个空字符
@@ -28,16 +28,16 @@ def result_callback(result):
     exec_result.append(result)
 
 
-def execute_sql(predicted_sql,ground_truth, db_path):
-    conn = sqlite3.connect(db_path)
-    # Connect to the database
+def execute_sql(predicted_sql, ground_truth, db_place):
+    conn = get_pg_connection(schema=db_place)
     cursor = conn.cursor()
-    cursor.execute(predicted_sql)
+    cursor.execute(normalize_pg_sql(predicted_sql))
     predicted_res = cursor.fetchall()
-    cursor.execute(ground_truth)
+    cursor.execute(normalize_pg_sql(ground_truth))
     ground_truth_res = cursor.fetchall()
+    cursor.close()
+    conn.close()
     res = 0
-    # todo: this should permute column order!
     if set(predicted_res) == set(ground_truth_res):
         res = 1
     return res
@@ -68,13 +68,13 @@ def package_sqls(sql_path, db_root_path, mode='gpt', data_mode='dev'):
     db_path_list = []
     if mode == 'gpt':
         sql_data = json.load(open(sql_path, 'r', encoding='utf8'))
-        for idx, sql_str in sql_data:  # .items()
+        for idx, sql_str in sql_data:
             if type(sql_str) == str:
                 sql, db_name = sql_str.split('\t----- bird -----\t')
             else:
                 sql, db_name = " ", "financial"
             clean_sqls.append(sql)
-            db_path_list.append(db_root_path + db_name + '/' + db_name + '.sqlite')
+            db_path_list.append(db_name)
 
     elif mode == 'gt':
         sqls = open(sql_path, encoding='utf8')
@@ -82,7 +82,7 @@ def package_sqls(sql_path, db_root_path, mode='gpt', data_mode='dev'):
         for idx, sql_str in enumerate(sql_txt):
             sql, db_name = sql_str.strip().split('\t')
             clean_sqls.append(sql)
-            db_path_list.append(db_root_path + db_name + '/' + db_name + '.sqlite')
+            db_path_list.append(db_name)
 
     return clean_sqls, db_path_list
 

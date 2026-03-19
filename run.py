@@ -12,6 +12,17 @@ import json
 import traceback
 
 
+def _build_pg_config() -> dict:
+    """Build PostgreSQL connection config from environment variables."""
+    return {
+        "host": os.environ.get("PG_HOST", "localhost"),
+        "port": int(os.environ.get("PG_PORT", "5432")),
+        "dbname": os.environ.get("PG_DATABASE", "BIRD"),
+        "user": os.environ.get("PG_USER", "postgres"),
+        "password": os.environ.get("PG_PASSWORD", "postgres"),
+    }
+
+
 def init_spider_message(idx: int, item: dict) -> dict:
     """
     Construct message for text-to-SQL task
@@ -72,14 +83,28 @@ def init_bird_message(idx: int, item: dict, db_path: str=None, use_gold_schema: 
     return user_message
 
 
-def run_batch(dataset_name, input_file, output_file, db_path, tables_json_path, start_pos=0, log_file=None, dataset_mode='dev', use_gold_schema=False, without_selector=False, max_samples=None):
-    chat_manager = ChatManager(data_path=db_path,
-                               tables_json_path=tables_json_path,
-                               log_path=log_file,
-                               dataset_name=dataset_name,
-                               model_name='gpt-4',
-                               lazy=True,
-                               without_selector=without_selector)
+def run_batch(dataset_name, input_file, output_file, db_path, tables_json_path, start_pos=0, log_file=None, dataset_mode='dev', use_gold_schema=False, without_selector=False, max_samples=None, use_postgres=False):
+    if use_postgres:
+        from core.chat_manager_pg import ChatManagerPG
+        db_config = _build_pg_config()
+        chat_manager = ChatManagerPG(
+            db_config=db_config,
+            log_path=log_file,
+            dataset_name=dataset_name,
+            model_name='gpt-4',
+            lazy=True,
+            without_selector=without_selector,
+        )
+    else:
+        chat_manager = ChatManager(
+            data_path=db_path,
+            tables_json_path=tables_json_path,
+            log_path=log_file,
+            dataset_name=dataset_name,
+            model_name='gpt-4',
+            lazy=True,
+            without_selector=without_selector,
+        )
     # load dataset
     batch = load_json_file(input_file)
     # resume from last checkpoint
@@ -187,9 +212,11 @@ def run_batch(dataset_name, input_file, output_file, db_path, tables_json_path, 
 def check_all_paths(args):
     if not os.path.exists(args.input_file):
         raise FileNotFoundError(f"Input file {args.input_file} not found")
+    if args.use_postgres:
+        return
     if not os.path.exists(args.db_path):
         raise FileNotFoundError(f"Database path {args.db_path} not found")
-    if not os.path.exists(args.tables_json_path):
+    if args.tables_json_path and not os.path.exists(args.tables_json_path):
         raise FileNotFoundError(f"Tables json path {args.tables_json_path} not found")
 
 
@@ -198,13 +225,14 @@ if __name__ == "__main__":
     parser.add_argument('--dataset_name', type=str, default='spider', choices=['spider', 'bird'], help='dataset name')
     parser.add_argument('--dataset_mode', type=str, default='dev', choices=['train', 'dev', 'test'], help='dataset mode')
     parser.add_argument('--input_file', type=str, required=True, help='path to dataset input')
-    parser.add_argument('--db_path', type=str, required=True, help='path to databases in dataset')
-    parser.add_argument('--tables_json_path', type=str, default=None, help='path to tables.json')
+    parser.add_argument('--db_path', type=str, default='', help='path to databases in dataset (not needed with --use_postgres)')
+    parser.add_argument('--tables_json_path', type=str, default=None, help='path to tables.json (not needed with --use_postgres)')
     parser.add_argument('--output_file', type=str, required=True, help='path to predicted output')
     parser.add_argument('--log_file', type=str, default='', help='path to log file if needed')
     parser.add_argument('--start_pos', type=int, default=0, help='start position of a batch')
     parser.add_argument('--use_gold_schema', action='store_true', default=False)
     parser.add_argument('--without_selector', action='store_true', default=False)
+    parser.add_argument('--use_postgres', action='store_true', default=False, help='use PostgreSQL agents (schema from DB, not tables.json)')
     args = parser.parse_args()
     # 打印args中的键值对
     for key, value in vars(args).items():
@@ -227,5 +255,6 @@ if __name__ == "__main__":
         log_file=args.log_file,
         start_pos=args.start_pos,
         use_gold_schema=args.use_gold_schema,
-        without_selector=args.without_selector
+        without_selector=args.without_selector,
+        use_postgres=args.use_postgres,
     )

@@ -4,11 +4,11 @@ import sys
 import json
 import numpy as np
 import argparse
-import sqlite3
 import multiprocessing as mp
 from func_timeout import func_timeout, FunctionTimedOut
 import time
 import math
+from db_utils import get_pg_connection, normalize_pg_sql
 
 
 def result_callback(result):
@@ -26,37 +26,39 @@ def clean_abnormal(input):
     return processed_list
 
 
-def execute_sql(sql, db_path):
-    # Connect to the database
-    conn = sqlite3.connect(db_path)
-    # Create a cursor object
+def execute_sql(sql, db_place):
+    conn = get_pg_connection(schema=db_place)
     cursor = conn.cursor()
     start_time = time.time()
-    cursor.execute(sql)
+    cursor.execute(normalize_pg_sql(sql))
     exec_time = time.time() - start_time
+    cursor.close()
+    conn.close()
     return exec_time
 
 
-def iterated_execute_sql(predicted_sql, ground_truth, db_path, iterate_num):
-    conn = sqlite3.connect(db_path)
+def iterated_execute_sql(predicted_sql, ground_truth, db_place, iterate_num):
+    predicted_sql = normalize_pg_sql(predicted_sql)
+    ground_truth = normalize_pg_sql(ground_truth)
+    conn = get_pg_connection(schema=db_place)
     diff_list = []
     cursor = conn.cursor()
     cursor.execute(predicted_sql)
     predicted_res = cursor.fetchall()
     cursor.execute(ground_truth)
     ground_truth_res = cursor.fetchall()
+    cursor.close()
+    conn.close()
     time_ratio = 0
     if set(predicted_res) == set(ground_truth_res):
         for i in range(iterate_num):
-            predicted_time = execute_sql(predicted_sql, db_path)
-            ground_truth_time = execute_sql(ground_truth, db_path)
-            # Avoid division by zero when predicted_time is 0 (e.g. very fast query)
+            predicted_time = execute_sql(predicted_sql, db_place)
+            ground_truth_time = execute_sql(ground_truth, db_place)
             if predicted_time > 1e-9:
                 diff_list.append(ground_truth_time / predicted_time)
         processed_diff_list = clean_abnormal(diff_list)
         if len(processed_diff_list) > 0:
             time_ratio = sum(processed_diff_list) / len(processed_diff_list)
-        # else: all samples filtered as outliers or all predicted_time ~0, leave time_ratio = 0
     return time_ratio
 
 
@@ -93,7 +95,7 @@ def package_sqls(sql_path, db_root_path, mode='gpt', data_mode='dev'):
             else:
                 sql, db_name = " ", "financial"
             clean_sqls.append(sql)
-            db_path_list.append(db_root_path + db_name + '/' + db_name + '.sqlite')
+            db_path_list.append(db_name)
 
     elif mode == 'gt':
         sqls = open(sql_path, encoding='utf8')
@@ -101,7 +103,7 @@ def package_sqls(sql_path, db_root_path, mode='gpt', data_mode='dev'):
         for idx, sql_str in enumerate(sql_txt):
             sql, db_name = sql_str.strip().split('\t')
             clean_sqls.append(sql)
-            db_path_list.append(db_root_path + db_name + '/' + db_name + '.sqlite')
+            db_path_list.append(db_name)
 
     return clean_sqls, db_path_list
 

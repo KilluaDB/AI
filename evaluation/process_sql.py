@@ -25,8 +25,8 @@
 ################################
 
 import json
-import sqlite3
 from nltk import word_tokenize
+from db_utils import get_pg_schema
 
 CLAUSE_KEYWORDS = ('select', 'from', 'where', 'group', 'order', 'limit', 'intersect', 'union', 'except')
 JOIN_KEYWORDS = ('join', 'on', 'as')
@@ -76,28 +76,15 @@ class Schema:
         return idMap
 
 
-def get_schema(db):
+def get_schema(db=None):
     """
     Get database's schema, which is a dict with table name as key
-    and list of column names as value
-    :param db: database path
+    and list of column names as value.
+    Connects to PostgreSQL via environment variables (PG_HOST, PG_DATABASE, etc.).
+    When *db* is given it is used as the PostgreSQL schema name (db_id).
     :return: schema dict
     """
-
-    schema = {}
-    conn = sqlite3.connect(db)
-    cursor = conn.cursor()
-
-    # fetch table names
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-    tables = [str(table[0].lower()) for table in cursor.fetchall()]
-
-    # fetch table info
-    for table in tables:
-        cursor.execute("PRAGMA table_info({})".format(table))
-        schema[table] = [str(col[1].lower()) for col in cursor.fetchall()]
-
-    return schema
+    return get_pg_schema(schema_name=db if db else 'public')
 
 
 def get_schema_from_json(fpath):

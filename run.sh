@@ -5,18 +5,24 @@
 # using SQL-Llama endpoint
 # export OPENAI_API_BASE='http://0.0.0.0:8000/v1'
 
-# Generate SQL on foo dataset for env test
+# PostgreSQL connection settings (used when --use_postgres is passed)
+export PG_HOST="${PG_HOST:-localhost}"
+export PG_PORT="${PG_PORT:-5432}"
+export PG_DATABASE="${PG_DATABASE:-BIRD}"
+export PG_USER="${PG_USER:-postgres}"
+export PG_PASSWORD="${PG_PASSWORD:-postgres}"
+
+# Generate SQL on foo dataset for env test (PostgreSQL mode)
 # This will get ./outputs/foo/output_bird.json and ./outputs/foo/predict_test.json
 #===============================================#
-echo "Starting Foo dataset prediction..."
+echo "Starting Foo dataset prediction (PostgreSQL)..."
 start_time=$(date +%s)
 python ./run.py --dataset_name "bird" \
    --dataset_mode="test" \
    --input_file "./data/foo/test.json" \
-   --db_path "./data/foo/test_databases" \
-   --tables_json_path "./data/foo/test_tables.json" \
    --output_file "./outputs/foo/output_bird.json" \
-   --log_file "./outputs/foo/log.txt"
+   --log_file "./outputs/foo/log.txt" \
+   --use_postgres
 end_time=$(date +%s)
 elapsed=$(( end_time - start_time ))
 elapsed_minutes=$(( elapsed / 60 ))

@@ -94,25 +94,33 @@ class Selector(BaseAgent):
         self.without_selector = without_selector
         self._message = {}
         
-        # Schema information storage
+        # Per-db_id schema cache: {db_id: {desc_dict, value_dict, pk_dict, fk_dict}}
+        self._schema_cache = {}
+        # Currently active db_id and its info
         self.db_info = {}
         self.schema_loaded = False
+        self._current_schema = None
         
-        # If schema info is provided, use it directly
         if schema_info:
             self._load_schema_from_info(schema_info)
         elif not lazy:
             self._load_db_info()
 
-    def _get_pg_connection(self):
-        """Get PostgreSQL connection."""
-        return psycopg2.connect(
+    def _get_pg_connection(self, schema: str = None):
+        """Get PostgreSQL connection, optionally setting search_path to *schema*."""
+        conn = psycopg2.connect(
             host=self.db_config['host'],
             port=self.db_config['port'],
             user=self.db_config['user'],
             password=self.db_config['password'],
             dbname=self.db_config['dbname']
         )
+        if schema:
+            conn.autocommit = True
+            cur = conn.cursor()
+            cur.execute('SET search_path TO %s', (schema,))
+            cur.close()
+        return conn
 
     def _load_schema_from_info(self, schema_info: Dict[str, Any]):
         """Load schema from pre-extracted information."""
@@ -143,7 +151,7 @@ class Selector(BaseAgent):
                 
         self.schema_loaded = True
 
-    def _get_column_attributes(self, cursor, table_name: str):
+    def _get_column_attributes(self, cursor, table_name: str, schema: str = 'public'):
         """
         Get column names and types from PostgreSQL using information_schema.
         Returns: (column_names_list, column_types_list)
@@ -151,10 +159,10 @@ class Selector(BaseAgent):
         query = """
             SELECT column_name, data_type 
             FROM information_schema.columns 
-            WHERE table_name = %s AND table_schema = 'public'
+            WHERE table_name = %s AND table_schema = %s
             ORDER BY ordinal_position
         """
-        cursor.execute(query, (table_name,))
+        cursor.execute(query, (table_name, schema))
         results = cursor.fetchall()
         
         column_names = [row[0] for row in results]
@@ -162,7 +170,7 @@ class Selector(BaseAgent):
         
         return column_names, column_types
 
-    def _get_primary_keys(self, cursor, table_name: str) -> List[str]:
+    def _get_primary_keys(self, cursor, table_name: str, schema: str = 'public') -> List[str]:
         """Get primary key columns for a table."""
         query = """
             SELECT kcu.column_name
@@ -172,12 +180,12 @@ class Selector(BaseAgent):
                 AND tc.table_schema = kcu.table_schema
             WHERE tc.constraint_type = 'PRIMARY KEY'
                 AND tc.table_name = %s
-                AND tc.table_schema = 'public'
+                AND tc.table_schema = %s
         """
-        cursor.execute(query, (table_name,))
+        cursor.execute(query, (table_name, schema))
         return [row[0] for row in cursor.fetchall()]
 
-    def _get_foreign_keys(self, cursor, table_name: str) -> List[tuple]:
+    def _get_foreign_keys(self, cursor, table_name: str, schema: str = 'public') -> List[tuple]:
         """
         Get foreign key relationships for a table.
         Returns: [(from_column, to_table, to_column), ...]
@@ -196,9 +204,9 @@ class Selector(BaseAgent):
                 AND tc.table_schema = ccu.table_schema
             WHERE tc.constraint_type = 'FOREIGN KEY'
                 AND tc.table_name = %s
-                AND tc.table_schema = 'public'
+                AND tc.table_schema = %s
         """
-        cursor.execute(query, (table_name,))
+        cursor.execute(query, (table_name, schema))
         return [(row[0], row[1], row[2]) for row in cursor.fetchall()]
 
     def _get_unique_column_values_str(self, cursor, table_name: str, 
@@ -314,20 +322,19 @@ class Selector(BaseAgent):
         
         return str(vals)
 
-    def _load_db_info(self):
-        """Load complete database schema information from PostgreSQL."""
-        print("\nLoading PostgreSQL database schema...", flush=True)
+    def _load_db_info(self, schema: str = 'public'):
+        """Load database schema information from PostgreSQL for a specific schema."""
+        print(f"\nLoading PostgreSQL schema '{schema}'...", flush=True)
         
         try:
-            conn = self._get_pg_connection()
+            conn = self._get_pg_connection(schema=schema)
             cursor = conn.cursor()
             
-            # Get all table names
             cursor.execute("""
                 SELECT table_name 
                 FROM information_schema.tables 
-                WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-            """)
+                WHERE table_schema = %s AND table_type = 'BASE TABLE'
+            """, (schema,))
             table_names = [row[0] for row in cursor.fetchall()]
             
             self.db_info = {
@@ -338,14 +345,9 @@ class Selector(BaseAgent):
             }
             
             for table_name in table_names:
-                # Get column info
-                column_names, column_types = self._get_column_attributes(cursor, table_name)
-                
-                # Get primary keys
-                pk_columns = self._get_primary_keys(cursor, table_name)
-                
-                # Get foreign keys
-                fk_list = self._get_foreign_keys(cursor, table_name)
+                column_names, column_types = self._get_column_attributes(cursor, table_name, schema)
+                pk_columns = self._get_primary_keys(cursor, table_name, schema)
+                fk_list = self._get_foreign_keys(cursor, table_name, schema)
                 
                 # Build is_key_column_lst
                 fk_columns = [fk[0] for fk in fk_list]
@@ -370,11 +372,13 @@ class Selector(BaseAgent):
             
             cursor.close()
             conn.close()
+            self._schema_cache[schema] = self.db_info
+            self._current_schema = schema
             self.schema_loaded = True
-            print(f"Loaded schema for {len(table_names)} tables", flush=True)
+            print(f"Loaded schema '{schema}': {len(table_names)} tables", flush=True)
             
         except Exception as e:
-            print(f"Error loading database schema: {e}", flush=True)
+            print(f"Error loading database schema '{schema}': {e}", flush=True)
             raise
 
     def _build_table_schema_str(self, table_name: str, columns_desc: List, columns_val: List):
@@ -398,6 +402,16 @@ class Selector(BaseAgent):
         
         schema_str += '[\n' + '\n'.join(column_infos).rstrip(',') + '\n]\n'
         return schema_str
+
+    def _ensure_schema(self, db_id: str = None):
+        """Load schema for *db_id* if not already cached. Falls back to 'public'."""
+        schema = db_id or 'public'
+        if schema in self._schema_cache:
+            self.db_info = self._schema_cache[schema]
+            self._current_schema = schema
+            self.schema_loaded = True
+        else:
+            self._load_db_info(schema=schema)
 
     def _get_db_desc_str(self, extracted_schema: dict = None, use_gold_schema: bool = False):
         """
@@ -507,6 +521,7 @@ class Selector(BaseAgent):
         
         Args:
             message: {
+                "db_id": database identifier (used as PG schema name),
                 "query": user_query,
                 "evidence": extra_info,
                 "extracted_schema": pre-extracted schema (optional)
@@ -518,6 +533,9 @@ class Selector(BaseAgent):
         logger.info("="*60)
         logger.info(f"\033[1;33m[SELECTOR] Starting schema extraction\033[0m")
         logger.info(f"Query: {message.get('query', '')[:100]}...")
+        
+        db_id = message.get('db_id')
+        self._ensure_schema(db_id)
         
         self._message = message
         ext_sch = message.get('extracted_schema', {})
@@ -668,22 +686,29 @@ class Refiner(BaseAgent):
         self.db_config = db_config
         self.dataset_name = dataset_name
         self._message = {}
+        self._current_schema = None
 
-    def _get_pg_connection(self):
-        """Get PostgreSQL connection."""
-        return psycopg2.connect(
+    def _get_pg_connection(self, schema: str = None):
+        """Get PostgreSQL connection, optionally setting search_path."""
+        conn = psycopg2.connect(
             host=self.db_config['host'],
             port=self.db_config['port'],
             user=self.db_config['user'],
             password=self.db_config['password'],
             dbname=self.db_config['dbname']
         )
+        if schema:
+            conn.autocommit = True
+            cur = conn.cursor()
+            cur.execute('SET search_path TO %s', (schema,))
+            cur.close()
+        return conn
 
     @func_set_timeout(120)
     def _execute_sql(self, sql: str) -> dict:
         """Execute SQL on PostgreSQL and return results."""
         try:
-            conn = self._get_pg_connection()
+            conn = self._get_pg_connection(schema=self._current_schema)
             cursor = conn.cursor()
             cursor.execute(sql)
             result = cursor.fetchall()
@@ -755,7 +780,7 @@ class Refiner(BaseAgent):
                 "desc_str": schema description,
                 "fk_str": foreign key info,
                 "final_sql": SQL to validate,
-                "db_id": database name (unused for PostgreSQL)
+                "db_id": database name (used as PG schema)
             }
         """
         if message['send_to'] != self.name:
@@ -764,6 +789,7 @@ class Refiner(BaseAgent):
         logger.info("="*60)
         logger.info(f"\033[1;33m[REFINER] Starting SQL validation\033[0m")
         
+        self._current_schema = message.get('db_id')
         self._message = message
         old_sql = message.get('pred', message.get('final_sql'))
         query = message.get('query')

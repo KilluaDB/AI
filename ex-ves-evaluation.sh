@@ -4,6 +4,13 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# PostgreSQL connection (override these or export before running)
+export PG_HOST="${PG_HOST:-localhost}"
+export PG_PORT="${PG_PORT:-5432}"
+export PG_DATABASE="${PG_DATABASE:-BIRD}"
+export PG_USER="${PG_USER:-postgres}"
+export PG_PASSWORD="${PG_PASSWORD:-postgres}"
+
 num_cpus=12
 meta_time_out=30.0
 time_out=60
