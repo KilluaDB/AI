@@ -31,8 +31,8 @@ services:
       - POSTGRES_DATABASE=${POSTGRES_DATABASE:-schema_agent}
     volumes:
       # Persist generated files
-      - ./physical_design/er_data:/app/physical_design/er_data
-      - ./physical_design/saved_files:/app/physical_design/saved_files
+      - ./design/er_data:/app/design/er_data
+      - ./design/saved_files:/app/design/saved_files
       - ./outputs:/app/outputs
     depends_on:
       postgres:

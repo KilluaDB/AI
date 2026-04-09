@@ -4,6 +4,7 @@ SchemaAgent FastAPI Application
 Pure HTTP API for database schema generation.
 Uses LLM to generate both Mermaid diagrams and JSON schema.
 """
+import json
 import os
 import sys
 import argparse
@@ -12,11 +13,12 @@ from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 import uvicorn
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from design.agent_chat_physical import main as agent_main
+from design.agent_chat_physical import main as agent_main, stream_main
 from design.llm_tools import (
     extract_conceptual_design,
     extract_mermaid_from_output,
@@ -136,7 +138,8 @@ async def root():
         "version": "1.0.0",
         "description": "Automated Relational Database Design System",
         "endpoints": {
-            "POST /schema/generate": "Generate database schema from requirements",
+            "POST /schema/generate": "Generate database schema from requirements (full response)",
+            "POST /schema/generate/stream": "Stream schema generation with real-time agent thinking (SSE)",
             "POST /mermaid/validate": "Validate Mermaid diagram syntax",
             "GET /postgres/test": "Test PostgreSQL connection",
             "POST /postgres/execute": "Execute DDL statements on PostgreSQL",
@@ -211,6 +214,143 @@ async def execute_ddl(request: DDLExecuteRequest):
 # async def get_models():
 #     """Get list of available LLM models."""
 #     return {"models": list_available_models()}
+
+
+@app.post("/schema/generate/stream")
+async def generate_schema_stream(request: SchemaGenerateRequest):
+    """
+    Stream schema generation with real-time agent thinking output (Server-Sent Events).
+
+    Each SSE event is a JSON object on a ``data:`` line followed by two newlines.
+    Possible event shapes:
+
+    - Phase marker:
+        {"type": "phase", "phase": "<name>", "status": "start"|"complete"|"refinement",
+         "message": "...", "attempt": <int>}
+
+    - Agent text message:
+        {"type": "agent_message", "agent": "<AgentName>", "phase": "<name>", "content": "..."}
+
+    - Tool call:
+        {"type": "tool_call", "agent": "<AgentName>", "phase": "<name>", "content": "..."}
+
+    - Tool result:
+        {"type": "tool_result", "agent": "<AgentName>", "phase": "<name>", "content": "..."}
+
+    - Internal reasoning (if model exposes it):
+        {"type": "thinking", "agent": "<AgentName>", "phase": "<name>", "content": "..."}
+
+    - Error:
+        {"type": "error", "message": "...", "detail": "..."}
+
+    - Stream end sentinel:
+        {"type": "done", "message": "Schema generation complete"}
+
+    After the final JSON event the server sends ``data: [DONE]`` (OpenAI-compatible sentinel).
+    """
+    available_models = list_available_models()
+    if request.model_name and request.model_name not in available_models:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid model '{request.model_name}'. Available: {available_models}"
+        )
+
+    model_name = request.model_name or "deepseek"
+
+    agent_parser = argparse.ArgumentParser()
+    args = agent_parser.parse_args([])
+    args.model_name = model_name
+    args.database_name = request.database_name
+    args.requirement_text = request.requirement_text
+
+    async def event_generator():
+        try:
+            async for event in stream_main(args):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as exc:
+            import traceback
+            yield (
+                f"data: {json.dumps({'type': 'error', 'message': str(exc), 'detail': traceback.format_exc()})}\n\n"
+            )
+        finally:
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/schema/generate/stream/mock")
+async def generate_schema_stream_mock(request: SchemaGenerateRequest):
+    """
+    Mock streaming endpoint — same SSE format as /schema/generate/stream but uses
+    pre-scripted fake agent messages. Use this to test the stream format without
+    real LLM API keys.
+    """
+    import asyncio
+
+    req_text = request.requirement_text
+
+    mock_events = [
+        {"type": "phase",         "phase": "logical_design",  "status": "start",    "message": "Starting logical schema design"},
+        {"type": "agent_message", "phase": "logical_design",  "agent": "ManagerAgent",
+         "content": f"Analyzing requirement: \"{req_text[:80]}...\"\nI will decompose this into entities and relationships."},
+        {"type": "tool_call",     "phase": "logical_design",  "agent": "ConceptualDesignerAgent",
+         "content": "[Tool: detect_requirement_domain] {\"text\": \"" + req_text[:60] + "\"}"},
+        {"type": "tool_result",   "phase": "logical_design",  "agent": "ConceptualDesignerAgent",
+         "content": "[Result]: education"},
+        {"type": "agent_message", "phase": "logical_design",  "agent": "ConceptualDesignerAgent",
+         "content": '{"question":"","output":{"Entity Set":{"Student":{"Attributes":["student_id","name","age"],"Primary Key":["student_id"]},"Course":{"Attributes":["course_id","name","credits","lecturer"],"Primary Key":["course_id"]}},"Relationship Set":{"Enrollment":{"Entities":["Student","Course"],"Cardinality":"M:N","Attributes":["enroll_date"]}}}}'},
+        {"type": "agent_message", "phase": "logical_design",  "agent": "ConceptualReviewerAgent",
+         "content": "The conceptual model correctly captures all entities and relationships. Approve"},
+        {"type": "agent_message", "phase": "logical_design",  "agent": "LogicalDesignerAgent",
+         "content": '{"tables":[{"name":"Student","columns":["student_id SERIAL","name VARCHAR(100)","age INT"],"primary_key":["student_id"]},{"name":"Course","columns":["course_id SERIAL","name VARCHAR(100)","credits INT","lecturer VARCHAR(100)"],"primary_key":["course_id"]},{"name":"Enrollment","columns":["student_id INT","course_id INT","enroll_date DATE"],"primary_key":["student_id","course_id"],"foreign_keys":["student_id -> Student","course_id -> Course"]}]}'},
+        {"type": "agent_message", "phase": "logical_design",  "agent": "QAAgent",
+         "content": "Test cases:\n1. INSERT INTO Student VALUES (1,'Alice',20)\n2. INSERT INTO Course VALUES (1,'Math',3,'Prof. Smith')\n3. INSERT INTO Enrollment VALUES (1,1,'2024-01-15')\n4. SELECT * FROM Student WHERE student_id=1"},
+        {"type": "agent_message", "phase": "logical_design",  "agent": "ExecutionAgent",
+         "content": "All 4 test cases pass. Schema is logically consistent. TERMINATE"},
+        {"type": "phase",         "phase": "logical_design",  "status": "complete"},
+        {"type": "mermaid",
+         "content": "erDiagram\n    Student {\n        int student_id PK\n        string name\n        int age\n    }\n    Course {\n        int course_id PK\n        string name\n        int credits\n        string lecturer\n    }\n    Enrollment {\n        int student_id FK\n        int course_id FK\n        date enroll_date\n    }\n    Student ||--o{ Enrollment : takes\n    Course ||--o{ Enrollment : has",
+         "valid": True},
+        {"type": "phase",         "phase": "physical_design", "status": "start",    "message": "Starting physical DDL generation"},
+        {"type": "agent_message", "phase": "physical_design", "agent": "PhysicalDesignerAgent",
+         "content": "Generating PostgreSQL DDL based on the logical schema..."},
+        {"type": "tool_call",     "phase": "physical_design", "agent": "PhysicalDesignerAgent",
+         "content": "[Tool: validate_ddl_syntax] CREATE TABLE Student (student_id SERIAL PRIMARY KEY, name VARCHAR(100) NOT NULL, age INT);"},
+        {"type": "tool_result",   "phase": "physical_design", "agent": "PhysicalDesignerAgent",
+         "content": "[Result]: DDL syntax valid"},
+        {"type": "agent_message", "phase": "physical_design", "agent": "PhysicalDesignerAgent",
+         "content": "```sql\nCREATE TABLE Student (\n    student_id SERIAL PRIMARY KEY,\n    name VARCHAR(100) NOT NULL,\n    age INT\n);\n\nCREATE TABLE Course (\n    course_id SERIAL PRIMARY KEY,\n    name VARCHAR(100) NOT NULL,\n    credits INT NOT NULL,\n    lecturer VARCHAR(100)\n);\n\nCREATE TABLE Enrollment (\n    student_id INT NOT NULL,\n    course_id INT NOT NULL,\n    enroll_date DATE,\n    PRIMARY KEY (student_id, course_id),\n    FOREIGN KEY (student_id) REFERENCES Student(student_id),\n    FOREIGN KEY (course_id) REFERENCES Course(course_id)\n);\n```"},
+        {"type": "phase",         "phase": "physical_design", "status": "complete"},
+        {"type": "phase",         "phase": "report",          "status": "start",    "message": "Generating final report"},
+        {"type": "agent_message", "phase": "report",          "agent": "ReportAgent",
+         "content": f"# Database Design Report\n\n## Requirement\n{req_text[:120]}...\n\n## Entities\n- **Student**: student_id, name, age\n- **Course**: course_id, name, credits, lecturer\n- **Enrollment**: student_id, course_id, enroll_date\n\n## DDL\nSee physical design output above.\n\n## Notes\n```sql\nCREATE DATABASE {request.database_name};\n```"},
+        {"type": "phase",         "phase": "report",          "status": "complete"},
+        {"type": "done",          "message": "Schema generation complete"},
+    ]
+
+    async def event_generator():
+        for event in mock_events:
+            yield f"data: {json.dumps(event)}\n\n"
+            await asyncio.sleep(0.3)
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.post("/schema/generate", response_model=SchemaGenerateResponse)

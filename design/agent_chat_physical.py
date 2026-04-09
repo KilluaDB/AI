@@ -489,17 +489,247 @@ async def main(args):
 
     return result.messages[1].content + note_message
     
-    
+
+
+async def stream_main(args):
+    """
+    Async generator that streams agent messages in real-time during schema generation.
+
+    Yields dicts with these fields:
+      - type: "phase" | "agent_message" | "tool_call" | "tool_result" | "thinking" | "error" | "done"
+      - phase: "logical_design" | "physical_design" | "report"
+      - status: "start" | "complete" | "refinement"  (only for type=="phase")
+      - agent: agent name string  (for message/tool events)
+      - content: text content     (for message/tool events)
+      - attempt: int              (only for refinement phases)
+    """
+    model_client = create_model_client(args.model_name)
+
+    conceptual_rag_tools = RAG_TOOLS[:4] if RAG_AVAILABLE else []
+    logical_rag_tools = [RAG_TOOLS[4], RAG_TOOLS[5], RAG_TOOLS[0]] if RAG_AVAILABLE and len(RAG_TOOLS) > 5 else []
+    physical_rag_tools = [RAG_TOOLS[3], RAG_TOOLS[0]] if RAG_AVAILABLE and len(RAG_TOOLS) > 3 else []
+    reviewer_rag_tools = RAG_TOOLS[:4] if RAG_AVAILABLE else []
+
+    conceptual_designer_agent = AssistantAgent(
+        "ConceptualDesignerAgent",
+        description="Concept designers design conceptual models based on requirements analysis. Can use RAG for domain-specific guidance.",
+        model_client=model_client,
+        tools=conceptual_rag_tools,
+        system_message=get_conceptual_design_agent_prompt(),
+        reflect_on_tool_use=True if conceptual_rag_tools else False,
+    )
+
+    logical_designer_agent = AssistantAgent(
+        "LogicalDesignerAgent",
+        description="The logic designer designs the logical model based on the conceptual model.",
+        model_client=model_client,
+        tools=[get_attribute_keys_by_arm_strong, confirm_to_third_normal_form] + logical_rag_tools,
+        system_message=get_logical_design_agent_prompt(),
+        reflect_on_tool_use=True,
+    )
+
+    qa_agent = AssistantAgent(
+        "QAAgent",
+        description="QA engineers generate test cases based on requirement analysis.",
+        model_client=model_client,
+        system_message=get_QA_agent_prompt(),
+        model_context=RoleChatCompletionContext(name="ManagerAgent"),
+    )
+
+    execution_agent = AssistantAgent(
+        "ExecutionAgent",
+        description="The execution agent evaluates whether the current database logic design schemas satisfies the test cases.",
+        model_client=model_client,
+        system_message=get_execution_agent_prompt(),
+    )
+
+    manager = AssistantAgent(
+        "ManagerAgent",
+        description="Managers have two jobs. One is to analyze user requirement, and the other is to decide the final acceptance.",
+        model_client=model_client,
+        system_message=get_manager_prompt(),
+    )
+
+    conceptual_reviewer_agent = AssistantAgent(
+        "ConceptualReviewerAgent",
+        description="Determine whether the current conceptual model satisfies all constraints. Can use RAG for domain validation.",
+        model_client=model_client,
+        tools=reviewer_rag_tools,
+        system_message=get_reviewer_prompt(),
+        reflect_on_tool_use=True if reviewer_rag_tools else False,
+    )
+
+    physical_designer_agent = AssistantAgent(
+        "PhysicalDesignerAgent",
+        description="The physical designer designs and executes the SQL statements based on the logical model.",
+        model_client=model_client,
+        tools=[
+            execute_sql_on_postgres,
+            execute_ddl_statements,
+            validate_ddl_syntax,
+            infer_and_generate_ddl,
+            test_postgres_connection,
+        ] + physical_rag_tools,
+        system_message=get_physical_design_agent_prompt(),
+        reflect_on_tool_use=True,
+    )
+
+    report_agent = AssistantAgent(
+        "ReportAgent",
+        description="The report agent compiles the current information into a standardized report format.",
+        model_client=model_client,
+        system_message=get_report_prompt(),
+    )
+
+    text_mention_termination = TextMentionTermination("TERMINATE")
+    max_messages_termination = MaxMessageTermination(max_messages=15)
+    termination = text_mention_termination | max_messages_termination
+
+    inner_termination = TextMentionTermination("Approve") | max_messages_termination
+    inner_team = RoundRobinGroupChat(
+        [conceptual_designer_agent, conceptual_reviewer_agent],
+        termination_condition=inner_termination,
+    )
+    society_of_mind_agent = SocietyOfMindAgent(
+        "ConceptualAgent",
+        description="A team that designs conceptual models based on requirements analysis.",
+        team=inner_team,
+        model_client=model_client,
+        instruction="Output the Final Answer formatted in json by ConceptualDesignerAgent. Do NOT change anything.",
+    )
+
+    team = SelectorGroupChat(
+        [manager, society_of_mind_agent, logical_designer_agent, qa_agent, execution_agent],
+        model_client=model_client,
+        termination_condition=termination,
+        allow_repeated_speaker=True,
+        selector_prompt=get_selector_prompt(),
+        selector_func=selector_func,
+    )
+
+    def _serialize_content(content):
+        """Serialize message content to a plain string."""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if hasattr(item, "name") and hasattr(item, "arguments"):
+                    # FunctionCall (tool call request)
+                    parts.append(f"[Tool: {item.name}] {item.arguments}")
+                elif hasattr(item, "content") and hasattr(item, "call_id"):
+                    # FunctionExecutionResult (tool result)
+                    parts.append(f"[Result]: {item.content}")
+                else:
+                    parts.append(str(item))
+            return "\n".join(parts)
+        return str(content)
+
+    def _event_type(msg):
+        name = type(msg).__name__
+        if "ToolCallRequest" in name:
+            return "tool_call"
+        if "ToolCallExecution" in name:
+            return "tool_result"
+        if "Thought" in name:
+            return "thinking"
+        return "agent_message"
+
+    text = args.requirement_text
+
+    # ── Phase 1: Logical design ──────────────────────────────────────────────
+    yield {"type": "phase", "phase": "logical_design", "status": "start",
+           "message": "Starting logical schema design"}
+
+    accumulated = []
+    async for msg in team.run_stream(task=text):
+        if not (hasattr(msg, "source") and hasattr(msg, "content")):
+            continue  # TaskResult or internal control message
+        source = msg.source
+        content = _serialize_content(msg.content)
+        accumulated.append(f"\n---------- {source} ----------\n{content}\n")
+        yield {"type": _event_type(msg), "agent": source,
+               "phase": "logical_design", "content": content}
+
+    await team.reset()
+    logical_output = "".join(accumulated)
+    yield {"type": "phase", "phase": "logical_design", "status": "complete"}
+
+    # Generate Mermaid ER diagram from the conceptual schema in the logical output
+    try:
+        mermaid_code, _ = conceptual_to_mermaid(logical_output)
+        if mermaid_code:
+            is_valid, errors = validate_mermaid_syntax(mermaid_code)
+            yield {"type": "mermaid", "content": mermaid_code, "valid": is_valid}
+    except Exception:
+        pass  # Mermaid generation is best-effort; don't abort the stream
+
+    # ── Phase 2: Physical design ─────────────────────────────────────────────
+    yield {"type": "phase", "phase": "physical_design", "status": "start",
+           "message": "Starting physical DDL generation"}
+
+    physical_acc = []
+    last_physical_content = ""
+
+    async def _run_physical(task_text):
+        nonlocal last_physical_content
+        async for msg in physical_designer_agent.run_stream(task=task_text):
+            if not (hasattr(msg, "source") and hasattr(msg, "content")):
+                continue
+            source = msg.source
+            content = _serialize_content(msg.content)
+            physical_acc.append(f"\n---------- {source} ----------\n{content}\n")
+            last_physical_content = content
+            yield {"type": _event_type(msg), "agent": source,
+                   "phase": "physical_design", "content": content}
+
+    async for event in _run_physical(logical_output):
+        yield event
+
+    # Self-refinement loop
+    for attempt in range(1, 4):
+        if not ("Fail" in last_physical_content or "error" in last_physical_content.lower()):
+            break
+        yield {"type": "phase", "phase": "physical_design",
+               "status": "refinement", "attempt": attempt}
+        refinement_prompt = (
+            "The previous DDL execution encountered errors. "
+            "Analyze the error, fix the problematic statement, re-execute, and verify success.\n\n"
+            f"Previous output:\n{last_physical_content}"
+        )
+        async for event in _run_physical(refinement_prompt):
+            yield event
+
+    full_output = logical_output + "".join(physical_acc)
+    yield {"type": "phase", "phase": "physical_design", "status": "complete"}
+
+    # ── Phase 3: Report ──────────────────────────────────────────────────────
+    yield {"type": "phase", "phase": "report", "status": "start",
+           "message": "Generating final report"}
+
+    async for msg in report_agent.run_stream(task=full_output):
+        if not (hasattr(msg, "source") and hasattr(msg, "content")):
+            continue
+        source = msg.source
+        content = _serialize_content(msg.content)
+        yield {"type": _event_type(msg), "agent": source,
+               "phase": "report", "content": content}
+
+    yield {"type": "phase", "phase": "report", "status": "complete"}
+    yield {"type": "done", "message": "Schema generation complete"}
+
+
 # ----------- for test -----------
-requirement_text = "A university needs a student course selection management system to maintain and track students' course selection information. Students have information such as student ID, name, age, the name of the course chosen by the student, etc. Each student can take multiple courses and can drop or change courses within the specified time. Each course has information such as course number, course name, credits, lecturer and class time. The popularity of a course depends on the number of students who take the course. The system can predict the popularity of the course and provide support for academic decision-making."
+if __name__ == "__main__":
+    requirement_text = "A university needs a student course selection management system to maintain and track students' course selection information. Students have information such as student ID, name, age, the name of the course chosen by the student, etc. Each student can take multiple courses and can drop or change courses within the specified time. Each course has information such as course number, course name, credits, lecturer and class time. The popularity of a course depends on the number of students who take the course. The system can predict the popularity of the course and provide support for academic decision-making."
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--model_name', default='gpt4')  
-parser.add_argument('--database_name', default='relation_mcp_test')
-parser.add_argument('--database_user', default='root')
-parser.add_argument('--database_password', default='123456')
-parser.add_argument('--database_port', default='3306')
-parser.add_argument('--requirement_text', default=requirement_text)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model_name', default='gpt4')
+    parser.add_argument('--database_name', default='relation_mcp_test')
+    parser.add_argument('--database_user', default='root')
+    parser.add_argument('--database_password', default='123456')
+    parser.add_argument('--database_port', default='3306')
+    parser.add_argument('--requirement_text', default=requirement_text)
 
-args = parser.parse_args()
-# asyncio.run(main(args))
+    args = parser.parse_args()
+    asyncio.run(main(args))
