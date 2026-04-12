@@ -9,7 +9,7 @@ import sys
 import json
 import time
 import logging
-import psycopg2
+import psycopg2  # pyright: ignore[reportMissingModuleSource]
 from copy import deepcopy
 from tqdm import trange
 from typing import List, Dict, Any
@@ -31,7 +31,7 @@ from core.const import (
     SELECTOR_NAME, DECOMPOSER_NAME, REFINER_NAME, SYSTEM_NAME,
     selector_template, decompose_template_bird, decompose_template_spider, refiner_template
 )
-from core.utils_pg import (
+from core.utils import (
     extract_world_info, 
     is_email, 
     is_valid_date_column,
@@ -54,7 +54,7 @@ except:
     INIT_LOG__PATH_FUNC = llm.init_log_path
     print(f"Use func from core.llm in agents_pg.py")
 
-
+# The rules that each agent must follow
 class BaseAgent:
     name = ""
     description = ""
@@ -75,7 +75,7 @@ class Selector(BaseAgent):
     description = "Analyze database schema and prune irrelevant tables/columns"
 
     def __init__(self, db_config: Dict[str, Any], schema_info: Dict[str, Any] = None, 
-                 model_name: str = "gpt-4", dataset_name: str = "custom", 
+                 model_name: str = "gpt-4o", dataset_name: str = "custom", 
                  lazy: bool = False, without_selector: bool = False):
         """
         Initialize Selector for PostgreSQL database.
@@ -116,6 +116,12 @@ class Selector(BaseAgent):
             password=self.db_config['password'],
             dbname=self.db_config['dbname']
         )
+        """
+        It sets the default workspace for all subsequent queries made using this connection.
+            Eliminates the Need for "Qualified" Table Names
+                SELECT * FROM sales.users; -> SELECT * FROM users;
+            Allows the LLM to write simpler, cleaner SQL, reducing the chance of syntax errors.
+        """
         if schema:
             conn.autocommit = True
             cur = conn.cursor()
@@ -124,7 +130,41 @@ class Selector(BaseAgent):
         return conn
 
     def _load_schema_from_info(self, schema_info: Dict[str, Any]):
-        """Load schema from pre-extracted information."""
+        """
+        Load schema from pre-extracted information and reformat it.
+        schema_info = {
+            "users": [
+                {"column_name": "user_id", "data_type": "INT"},
+                {"column_name": "email_address", "data_type": "VARCHAR"}
+            ],
+            "products": [
+                {"column_name": "product_id", "data_type": "INT"},
+                {"column_name": "unit_price", "data_type": "DECIMAL"}
+            ]
+        }
+        {
+            "desc_dict": {
+                "users": [
+                    ["user_id", "user id", ""],
+                    ["email_address", "email address", ""]
+                ],
+                "products": [
+                    ["product_id", "product id", ""],
+                    ["unit_price", "unit price", ""]
+                ]
+            },
+            "value_dict": {
+                "users": [
+                    ["user_id", ""],
+                    ["email_address", ""]
+                ],
+                "products": [
+                    ["product_id", ""],
+                    ["unit_price", ""]
+                ]
+            },
+        }
+        """
         self.db_info = {
             "desc_dict": {},
             "value_dict": {},
@@ -132,6 +172,11 @@ class Selector(BaseAgent):
             "fk_dict": {}
         }
         
+        """
+        schema_info.items() -> dictionary, 
+            table_name -> key
+            columns -> value
+        """
         for table_name, columns in schema_info.items():
             self.db_info["desc_dict"][table_name] = []
             self.db_info["value_dict"][table_name] = []
@@ -213,7 +258,15 @@ class Selector(BaseAgent):
     def _get_unique_column_values_str(self, cursor, table_name: str, 
                                        column_names: List[str], column_types: List[str],
                                        json_column_names: List[str], is_key_column_lst: List[bool]):
-        """Get sample values for columns to help with query generation."""
+        """
+        Get sample values for columns to help with query generation.
+        [
+            ["id",              ""],                # Skipped because it ends in 'id' and is a primary key
+            ["user_id",         ""],                # Skipped because it ends in 'id' and is a foreign key
+            ["status",          "['Delivered', 'Shipped', 'Pending', 'Cancelled']"], 
+            ["payment_method",  "['Credit Card', 'PayPal', 'Stripe']"]
+        ]
+        """
         col_to_values_str_dict = {}
         col_to_values_str_lst = []
 
@@ -229,7 +282,10 @@ class Selector(BaseAgent):
                 continue
 
             try:
-                # PostgreSQL uses double quotes for identifiers
+                """
+                It fetches the top 10 most frequently occurring values in that column
+                It guarantees you get the actual common values not rare anomalies
+                """
                 sql = f'SELECT "{column_name}" FROM "{table_name}" GROUP BY "{column_name}" ORDER BY COUNT(*) DESC LIMIT 10'
                 cursor.execute(sql)
                 values = cursor.fetchall()
@@ -262,7 +318,10 @@ class Selector(BaseAgent):
         return col_to_values_str_lst
 
     def _get_value_examples_str(self, values: List[object], col_type: str):
-        """Format sample values as a string for prompts."""
+        """
+        Format sample values as a string for prompts.
+        "[None, 'Left at front door', 'Handle with care', 'Call upon arrival']"
+        """
         if not values:
             return ''
         
@@ -274,6 +333,7 @@ class Selector(BaseAgent):
         if len(values) > 10 and col_type in numeric_types:
             return ''
         
+        # Null Handling
         vals = []
         has_null = False
         for v in values:
@@ -306,25 +366,69 @@ class Selector(BaseAgent):
             vals = new_values
             if not vals:
                 return ''
-            max_len = max(len(str(a)) for a in vals)
+            max_len = max(len(str(a)) for a in vals)    # No string is over 50 characters
             if max_len > 50:
                 return ''
         
         if not vals:
             return ''
         
+        # cuts the list down from 10 items to a maximum of 6 items
         vals = vals[:6]
         
+        # An LLM only needs to see one date string to understand the exact format
         if is_valid_date_column(vals):
             vals = vals[:1]
-        
+        """
+        if The LLM doesn't know NULL exists
+            It might guess and write WHERE status = '' or WHERE status = 'None'
+        If it sees None in the sample values
+            It understands that this column supports empty states and write WHERE status IS NULL
+        With NULL we cannot use standard math operators like the equals sign (=)
+        """
         if has_null:
             vals.insert(0, None)
         
         return str(vals)
 
     def _load_db_info(self, schema: str = 'public'):
-        """Load database schema information from PostgreSQL for a specific schema."""
+        """
+        Load database schema information from PostgreSQL for a specific schema.
+        {
+            "desc_dict": {
+                "users": [
+                    ["id", "id", ""],
+                    ["username", "username", ""],
+                ],
+                "orders": [
+                    ["id", "id", ""],
+                    ["user_id", "user id", ""],
+                    ["status", "status", ""]
+                ]
+            },
+            "value_dict": {
+                "users": [
+                    ["id", ""], 
+                    ["username", "Alice, Bob, Charlie"],
+                ],
+                "orders": [
+                    ["id", ""], 
+                    ["user_id", ""], 
+                    ["status", "Pending, Shipped, Delivered, Cancelled"]
+                ]
+            },
+            "pk_dict": {
+                "users": ["id"],
+                "orders": ["id"]
+            },
+            "fk_dict": {
+                "users": [],
+                "orders": [
+                    ["user_id", "users", "id"] 
+                ]
+            }
+        }
+        """
         print(f"\nLoading PostgreSQL schema '{schema}'...", flush=True)
         
         try:
@@ -346,9 +450,9 @@ class Selector(BaseAgent):
             }
             
             for table_name in table_names:
-                column_names, column_types = self._get_column_attributes(cursor, table_name, schema)
-                pk_columns = self._get_primary_keys(cursor, table_name, schema)
-                fk_list = self._get_foreign_keys(cursor, table_name, schema)
+                column_names, column_types = self._get_column_attributes(cursor, table_name, schema)    # column name + data type
+                pk_columns = self._get_primary_keys(cursor, table_name, schema)     # PK columns
+                fk_list = self._get_foreign_keys(cursor, table_name, schema)        # from_column, to_table & to_column
                 
                 # Build is_key_column_lst
                 fk_columns = [fk[0] for fk in fk_list]
@@ -383,7 +487,15 @@ class Selector(BaseAgent):
             raise
 
     def _build_table_schema_str(self, table_name: str, columns_desc: List, columns_val: List):
-        """Build schema description string for a table."""
+        """
+        Build schema description string for a table.
+        # Table: users
+        [
+        (id, User ID. Value examples: 1, 2, 3. And Unique identifier),
+        (name, Full Name. Value examples: 'Alice', 'Bob'.),
+        (age, User Age. Value examples: 25, 30. And Must be over 18)
+        ]
+        """
         schema_str = f"# Table: {table_name}\n"
         column_infos = []
         
@@ -417,22 +529,35 @@ class Selector(BaseAgent):
     def _get_db_desc_str(self, extracted_schema: dict = None, use_gold_schema: bool = False):
         """
         Build database schema description for prompts.
-        
         Args:
             extracted_schema: {table_name: "keep_all" or "drop_all" or ['col_a', 'col_b']}
-        
         Returns:
             (schema_desc_str, fk_desc_str, chosen_schema_dict)
+        
+        schema_desc_str sampe -> 
+            # Table: users
+            [
+                (id, User ID. Value examples: 1, 2, 3. And Unique identifier),
+                (name, Full Name. Value examples: 'Alice', 'Bob'.),
+                (age, User Age. Value examples: 25, 30. And Must be over 18)
+            ]
+        fk_desc_str sample -> 
+            orders."user_id" = users."id"
+        chosen_db_schema_dict sample -> 
+            {
+                'users': ['id', 'name', 'age'],
+                'orders': ['order_id', 'user_id', 'amount']
+            }
         """
         if not self.schema_loaded:
             self._load_db_info()
         
         extracted_schema = extracted_schema or {}
         
-        desc_info = self.db_info['desc_dict']
-        value_info = self.db_info['value_dict']
-        pk_info = self.db_info['pk_dict']
-        fk_info = self.db_info['fk_dict']
+        desc_info = self.db_info['desc_dict']       # Column names, data types, and descriptions.
+        value_info = self.db_info['value_dict']     # Sample data values for the columns.
+        pk_info = self.db_info['pk_dict']           # Primary Keys (PKs).
+        fk_info = self.db_info['fk_dict']           # Foreign Keys (FKs).
         
         schema_desc_str = ''
         db_fk_infos = []
@@ -456,9 +581,11 @@ class Selector(BaseAgent):
             new_columns_val = []
             
             if table_decision == "drop_all":
+                # keeps the first 6 columns of the table and discards the rest.
                 new_columns_desc = deepcopy(columns_desc[:6])
                 new_columns_val = deepcopy(columns_val[:6]) if columns_val else [[c[0], ''] for c in new_columns_desc]
             elif table_decision == "keep_all" or table_decision == '':
+                # all columns and their sample values are kept.
                 new_columns_desc = deepcopy(columns_desc)
                 new_columns_val = deepcopy(columns_val) if columns_val else [[c[0], ''] for c in new_columns_desc]
             else:
