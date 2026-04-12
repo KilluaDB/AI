@@ -4,9 +4,9 @@ Uses the multi-agent system (Selector, Decomposer, Refiner) for SQL generation.
 SQL execution is handled by the Go backend for security.
 """
 
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from fastapi import FastAPI, HTTPException  # pyright: ignore[reportMissingImports]
+from fastapi.middleware.cors import CORSMiddleware  # pyright: ignore[reportMissingImports]
+from pydantic import BaseModel, Field  # pyright: ignore[reportMissingImports]
 from typing import Optional, List
 import logging
 import os
@@ -48,14 +48,14 @@ def get_agent_service():
     1. Environment variables (LLM_API_KEY, LLM_MODEL, LLM_API_BASE)
     2. Fallback to api_config.py defaults
     """
-    global agent_service
-    if agent_service is None:
+    global agent_service        # Singleton pattern
+    if agent_service is None:   # First call -> import the class -> create the object -> saves it to the global variable
         from agent_service import AgentService
         
         # Get from env vars, with local Ollama + SQLCoder defaults
-        api_key = os.getenv("LLM_API_KEY", "ollama")
-        model_name = os.getenv("LLM_MODEL", "mannix/defog-llama3-sqlcoder-8b")
-        api_base = os.getenv("LLM_API_BASE", "http://localhost:11434/v1")
+        api_key = os.getenv("LLM_API_KEY", "")
+        model_name = os.getenv("LLM_MODEL", "")
+        api_base = os.getenv("LLM_API_BASE", "")
         
         agent_service = AgentService(
             api_key=api_key,
@@ -175,31 +175,38 @@ async def generate_sql(request: GenerateSQLRequest):
             mode="error"
         )
     
+    # Extract the original host and port from the Go request
+    # Will be used when deploying the code inside the cluster
+    db_host = request.db_connection.host
+    db_port = request.db_connection.port
+    db_user = request.db_connection.user
+    db_password = request.db_connection.password
+    logger.info(f"[DB User]: {db_user}")
+    logger.info(f"[DB Password]: {db_password}")
+    
+    # If we are not inside the cluster testing locally, override the unresolvable Kubernetes hostname
+    if os.getenv("LOCAL_DEV") == "true":
+        logger.warning(f"[LOCAL DEV HACK] Intercepted K8s host: {db_host}. Rerouting to 127.0.0.1:5432")
+        db_host = "127.0.0.1"
+        # This must match your kubectl port-forward tunnel left-side port
+        db_port = 5433
+
     db_config = {
-        "host": request.db_connection.host,
-        "port": request.db_connection.port,
+        "host": db_host,
+        "port": db_port,
         "database": request.db_connection.database,
-        "user": request.db_connection.user,
-        "password": request.db_connection.password
+        "user": db_user,
+        "password": db_password
     }
     
     try:
-        if request.use_agents:
-            # Use full multi-agent pipeline
-            result = service.generate_sql_with_agents(
-                question=request.question,
-                db_config=db_config,
-                hint=request.hint or ""
-            )
-            mode = "agents"
-        else:
-            # Use simple single-call generation
-            result = service.generate_sql_simple(
-                question=request.question,
-                db_config=db_config,
-                hint=request.hint or ""
-            )
-            mode = "simple"
+        # Use full multi-agent pipeline
+        result = service.generate_sql_with_agents(  # Dictionary with the result
+            question=request.question,
+            db_config=db_config,
+            hint=request.hint or ""
+        )
+        mode = "agents"
         
         return GenerateSQLResponse(
             success=result["success"],
@@ -218,89 +225,58 @@ async def generate_sql(request: GenerateSQLRequest):
         )
 
 
-@app.post("/api/v1/generate/simple", response_model=GenerateSQLResponse, tags=["SQL Generation"])
-async def generate_sql_simple(request: GenerateSQLRequest):
-    """
-    Generate SQL using simple single-LLM-call approach.
-    Faster but less sophisticated than the multi-agent pipeline.
+# @app.post("/api/v1/generate/simple", response_model=GenerateSQLResponse, tags=["SQL Generation"])
+# async def generate_sql_simple(request: GenerateSQLRequest):
+#     """
+#     Generate SQL using simple single-LLM-call approach.
+#     Faster but less sophisticated than the multi-agent pipeline.
     
-    Use this for:
-    - Simple queries
-    - When speed is more important than accuracy
-    - Testing/debugging
-    """
-    logger.info(f"Generating SQL (simple mode) for: {request.question[:100]}...")
+#     Use this for:
+#     - Simple queries
+#     - When speed is more important than accuracy
+#     - Testing/debugging
+#     """
+#     logger.info(f"Generating SQL (simple mode) for: {request.question[:100]}...")
     
-    try:
-        service = get_agent_service()
-    except RuntimeError as e:
-        return GenerateSQLResponse(
-            success=False,
-            error=str(e),
-            mode="error"
-        )
+#     try:
+#         service = get_agent_service()
+#     except RuntimeError as e:
+#         return GenerateSQLResponse(
+#             success=False,
+#             error=str(e),
+#             mode="error"
+#         )
     
-    db_config = {
-        "host": request.db_connection.host,
-        "port": request.db_connection.port,
-        "database": request.db_connection.database,
-        "user": request.db_connection.user,
-        "password": request.db_connection.password
-    }
+#     db_config = {
+#         "host": request.db_connection.host,
+#         "port": request.db_connection.port,
+#         "database": request.db_connection.database,
+#         "user": request.db_connection.user,
+#         "password": request.db_connection.password
+#     }
     
-    try:
-        result = service.generate_sql_simple(
-            question=request.question,
-            db_config=db_config,
-            hint=request.hint or ""
-        )
+#     try:
+#         result = service.generate_sql_simple(
+#             question=request.question,
+#             db_config=db_config,
+#             hint=request.hint or ""
+#         )
         
-        return GenerateSQLResponse(
-            success=result["success"],
-            sql=result.get("sql"),
-            error=result.get("error"),
-            tables_used=result.get("tables_used"),
-            mode="simple"
-        )
+#         return GenerateSQLResponse(
+#             success=result["success"],
+#             sql=result.get("sql"),
+#             error=result.get("error"),
+#             tables_used=result.get("tables_used"),
+#             mode="simple"
+#         )
         
-    except Exception as e:
-        logger.error(f"Simple SQL generation failed: {e}")
-        return GenerateSQLResponse(
-            success=False,
-            error="Failed to generate SQL.",
-            mode="error"
-        )
-
-
-@app.post("/api/v1/schema", response_model=SchemaResponse, tags=["Schema"])
-async def get_schema(request: SchemaRequest):
-    """
-    Get database schema (useful for debugging and UI display).
-    
-    Returns table names, column information, primary keys, and foreign key relationships.
-    """
-    try:
-        service = get_agent_service()
-    except RuntimeError as e:
-        return SchemaResponse(success=False, error=str(e))
-    
-    db_config = {
-        "host": request.db_connection.host,
-        "port": request.db_connection.port,
-        "database": request.db_connection.database,
-        "user": request.db_connection.user,
-        "password": request.db_connection.password
-    }
-    
-    try:
-        schema = service.get_schema_from_db(db_config)
-        return SchemaResponse(success=True, schema=schema)
-    except Exception as e:
-        logger.error(f"Schema extraction failed: {e}")
-        return SchemaResponse(
-            success=False,
-            error="Failed to extract database schema. Please check connection details."
-        )
+#     except Exception as e:
+#         logger.error(f"Simple SQL generation failed: {e}")
+#         return GenerateSQLResponse(
+#             success=False,
+#             error="Failed to generate SQL.",
+#             mode="error"
+#         )
 
 
 # ============================================================================
@@ -312,15 +288,10 @@ async def startup_event():
     """Initialize resources on startup"""
     logger.info("Text-to-SQL Agent Service starting...")
     
-    api_key = os.getenv("LLM_API_KEY", "ollama")
-    api_base = os.getenv("LLM_API_BASE", "http://localhost:11434/v1")
-    if api_key == "ollama":
-        logger.info("Using local Ollama dummy API key")
-    else:
-        logger.info("Custom LLM_API_KEY configured")
+    api_key = os.getenv("LLM_API_KEY", "")
+    api_base = os.getenv("LLM_API_BASE", "")
+    model = os.getenv("LLM_MODEL", "")
     logger.info(f"LLM API base: {api_base}")
-    
-    model = os.getenv("LLM_MODEL", "mannix/defog-llama3-sqlcoder-8b")
     logger.info(f"LLM Model: {model}")
     logger.info("Service ready to accept requests")
     logger.info("Pipeline: Selector → Decomposer → Refiner")
@@ -337,7 +308,7 @@ async def shutdown_event():
 # ============================================================================
 
 if __name__ == "__main__":
-    import uvicorn
+    import uvicorn  # pyright: ignore[reportMissingImports]
     
     uvicorn.run(
         "main:app",
