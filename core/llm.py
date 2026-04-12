@@ -1,8 +1,8 @@
 import sys
 import json
 import time
-from core.api_config import *
-
+import os
+import openai
 MAX_TRY = 5
 
 # 用来传递外面的字典进来
