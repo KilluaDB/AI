@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 from core.utils import *
 from core.chat_manager import ChatManager
-from core.utils import get_gold_columns
 from core.const import SYSTEM_NAME
 from tqdm import tqdm
 import time
@@ -85,7 +84,7 @@ def init_bird_message(idx: int, item: dict, db_path: str=None, use_gold_schema: 
 
 def run_batch(dataset_name, input_file, output_file, db_path, tables_json_path, start_pos=0, log_file=None, dataset_mode='dev', use_gold_schema=False, without_selector=False, max_samples=None, use_postgres=False):
     if use_postgres:
-        from core.chat_manager_pg import ChatManagerPG
+        from core.chat_manager import ChatManagerPG
         db_config = _build_pg_config()
         chat_manager = ChatManagerPG(
             db_config=db_config,
