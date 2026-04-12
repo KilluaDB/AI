@@ -17,6 +17,17 @@ print_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
+# --- PARSE ARGUMENTS ---
+for arg in "$@"; do
+    case $arg in
+        --local-dev)
+        export LOCAL_DEV="true"
+        shift
+        ;;
+    esac
+done
+# -----------------------
+
 # Change to script directory
 cd "$(dirname "$0")"
 
@@ -24,17 +35,16 @@ cd "$(dirname "$0")"
 if [ ! -f .env ]; then
     print_warning ".env file not found. Creating template..."
     cat > .env << 'EOF'
-# LLM Configuration (Optional - defaults to api_config.py if not set)
-# Uncomment and set these to override api_config.py settings:
 
+# Local Ollama defaults
 # LLM_API_KEY=ollama
 # LLM_MODEL=mannix/defog-llama3-sqlcoder-8b
 # LLM_API_BASE=http://localhost:11434/v1
 
-# Local Ollama defaults
-LLM_API_KEY=ollama
-LLM_MODEL=mannix/defog-llama3-sqlcoder-8b
-LLM_API_BASE=http://localhost:11434/v1
+# GPT-4o defaults
+LLM_API_KEY=your_github_PAT_here
+LLM_MODEL=gpt-4o
+LLM_API_BASE=https://models.github.ai/inference
 
 # Service Port
 PORT=5001
@@ -46,20 +56,6 @@ fi
 
 # Load environment variables
 export $(cat .env | grep -v '^#' | xargs)
-
-# Check local Ollama defaults
-if [ -z "${LLM_API_KEY:-}" ]; then
-    export LLM_API_KEY="ollama"
-    print_info "LLM_API_KEY not set, defaulting to 'ollama'"
-fi
-if [ -z "${LLM_MODEL:-}" ]; then
-    export LLM_MODEL="mannix/defog-llama3-sqlcoder-8b"
-    print_info "LLM_MODEL not set, defaulting to 'mannix/defog-llama3-sqlcoder-8b'"
-fi
-if [ -z "${LLM_API_BASE:-}" ]; then
-    export LLM_API_BASE="http://localhost:11434/v1"
-    print_info "LLM_API_BASE not set, defaulting to Ollama local endpoint"
-fi
 
 # Check Python
 if ! command -v python3 &> /dev/null; then
@@ -79,6 +75,10 @@ source venv/bin/activate
 # Install dependencies
 print_info "Installing dependencies..."
 pip install -r requirements.txt --quiet
+
+if [ "$LOCAL_DEV" = "true" ]; then
+    print_warning "LOCAL_DEV is enabled! K8s database hostnames will be rerouted to localhost."
+fi
 
 # Start the service
 print_success "Starting Text-to-SQL service on port ${PORT:-5001}"
