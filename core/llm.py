@@ -32,12 +32,11 @@ def init_log_path(my_log_path):
     api_trace_json_path = os.path.join(dir_name, 'api_trace.json')
 
 
-def api_func(prompt:str):
-    global MODEL_NAME
+def api_func(prompt:str, model_name: str = "gpt-4o"):
     global _model_banner_printed
 
     if not _model_banner_printed:
-        print(f"\nUse OpenAI model: {MODEL_NAME}\n")
+        print(f"\nUse OpenAI model: {model_name}\n")
         _model_banner_printed = True
     
     # Use 'model' parameter for all OpenAI-compatible APIs (Groq, Gemini, etc.)
@@ -48,7 +47,7 @@ def api_func(prompt:str):
     # max_tokens caps output to avoid unbounded or looping completions (e.g. SQLCoder on chatty prompts)
     # request_timeout fails fast if the backend hangs
     response = openai.ChatCompletion.create(
-        model=MODEL_NAME,
+        model=model_name,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.1,
         max_tokens=2048,
@@ -60,11 +59,10 @@ def api_func(prompt:str):
     return text, prompt_token, response_token
 
 
-def safe_call_llm(input_prompt, **kwargs) -> str:
+def safe_call_llm(input_prompt, model_name: str = "gpt-4o", **kwargs) -> str:
     """
     函数功能描述：输入 input_prompt ，返回 模型生成的内容（内部自动错误重试5次，5次错误抛异常）
     """
-    global MODEL_NAME
     global log_path
     global api_trace_json_path
     global total_prompt_tokens
@@ -133,7 +131,7 @@ def safe_call_llm(input_prompt, **kwargs) -> str:
             return sys_response
         except Exception as ex:
             print(ex)
-            print(f'Request {MODEL_NAME} failed. try {i} times. Sleep 20 secs.')
+            print(f'Request {model_name} failed. try {i} times. Sleep 20 secs.')
             time.sleep(20)
 
     raise ValueError('safe_call_llm error!')
