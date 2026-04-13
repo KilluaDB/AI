@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: text-to-sql
+  namespace: default
+  labels:
+    app: text-to-sql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: text-to-sql
+  template:
+    metadata:
+      labels:
+        app: text-to-sql
+    spec:
+      dnsPolicy: ClusterFirst
+      containers:
+        - name: fastapi
+          image:  text-to-sql-api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5001
+              name: http
+          env:
+          # Securely loading the GitHub PAT from your existing secrets!
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef: 
+                  name: text-to-sql-secrets
+                  key: LLM_API_KEY
+            - name: LLM_MODEL
+              value: "gpt-4o"
+            - name: LLM_API_BASE
+              value: "https://models.github.ai/inference"
+            # Optional : Match your backend's resource limits 
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+
