@@ -15,9 +15,7 @@ ooo-api.py
 baseline/
 tmp/
 misc/
-data/bird/
-data/spider/
-data/foo/
+**/data
 dev_databases/
 dev_databases.zip
 train_databases/
