@@ -1,0 +1,86 @@
+# ============================================
+# SchemaAgent - Docker Compose Configuration
+# ============================================
+# This file defines the services for running SchemaAgent
+
+version: '3.8'
+
+services:
+  # ============================================
+  # SchemaAgent API Service
+  # ============================================
+  schema-agent-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: schema-agent-api
+    ports:
+      - "8080:8080"
+    environment:
+      # LLM API Keys (set in .env file or override here)
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY}
+      # PostgreSQL Configuration
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DATABASE=${POSTGRES_DATABASE:-schema_agent}
+    volumes:
+      # Persist generated files
+      - ./design/er_data:/app/design/er_data
+      - ./design/saved_files:/app/design/saved_files
+      - ./outputs:/app/outputs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - schema-agent-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================
+  # PostgreSQL Database Service
+  # ============================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: schema-agent-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DATABASE:-schema_agent}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - schema-agent-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DATABASE:-schema_agent}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+# ============================================
+# Networks
+# ============================================
+networks:
+  schema-agent-network:
+    driver: bridge
+
+# ============================================
+# Volumes
+# ============================================
+volumes:
+  postgres_data:
+    driver: local

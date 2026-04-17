@@ -1,0 +1,85 @@
+# ============================================
+# Docker Ignore File
+# ============================================
+# Exclude files and directories from Docker build context
+
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv/
+ENV/
+env/
+.env
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Virtual environments
+schema/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Documentation
+docs/_build/
+
+# Logs
+*.log
+logs/
+
+# Local development
+.env.local
+*.local
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Large files that shouldn't be in the image
+*.pt
+*.pth
+*.bin
+*.onnx
+
+# Keep necessary output directories but ignore contents
+outputs/**/*
+!outputs/.gitkeep
+physical_design/er_data/**/*
+!physical_design/er_data/.gitkeep
+physical_design/saved_files/**/*
+!physical_design/saved_files/.gitkeep
+physical_design/customer_files/**/*
+!physical_design/customer_files/.gitkeep
+
+# Cache directories
+.gradio/

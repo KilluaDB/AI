@@ -1,0 +1,29 @@
+erDiagram
+    Student {
+        int Student_ID PK
+        string Name
+        int Age
+    }
+
+    Course {
+        string Course_Number PK
+        string Course_Name
+        int Credits
+        string Lecturer
+        string Class_Time
+    }
+
+    Major {
+        int Major_ID PK
+        string Major_Name
+    }
+
+    Course_Selection {
+        int Student_ID FK
+        string Course_Number FK
+    }
+
+    Student ||--o{ Major : "Major Enrollment"
+    Student o{--o{ Course : "Course Selection"
+    Course_Selection }o--|| Student
+    Course_Selection }o--|| Course
