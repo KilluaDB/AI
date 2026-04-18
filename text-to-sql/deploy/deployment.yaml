@@ -18,7 +18,7 @@ spec:
       dnsPolicy: ClusterFirst
       containers:
         - name: fastapi
-          image:  ai:latest
+          image:  text-to-sql:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
@@ -28,7 +28,7 @@ spec:
             - name: LLM_API_KEY
               valueFrom:
                 secretKeyRef: 
-                  name: ai
+                  name: text-to-sql
                   key: LLM_API_KEY
             - name: LLM_MODEL
               value: "gpt-4o"
