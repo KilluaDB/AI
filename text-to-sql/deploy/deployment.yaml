@@ -18,17 +18,17 @@ spec:
       dnsPolicy: ClusterFirst
       containers:
         - name: fastapi
-          image:  text-to-sql-api:latest
+          image:  ai:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 5001
+            - containerPort: 8080
               name: http
           env:
           # Securely loading the GitHub PAT from your existing secrets!
             - name: LLM_API_KEY
               valueFrom:
                 secretKeyRef: 
-                  name: text-to-sql-secrets
+                  name: ai
                   key: LLM_API_KEY
             - name: LLM_MODEL
               value: "gpt-4o"

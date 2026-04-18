@@ -47,7 +47,7 @@ LLM_MODEL=gpt-4o
 LLM_API_BASE=https://models.github.ai/inference
 
 # Service Port
-PORT=5001
+PORT=8080
 EOF
     print_info "Created .env template"
     print_info "The service will use api_config.py defaults unless you override in .env"
@@ -81,8 +81,8 @@ if [ "$LOCAL_DEV" = "true" ]; then
 fi
 
 # Start the service
-print_success "Starting Text-to-SQL service on port ${PORT:-5001}"
-print_info "API docs available at: http://localhost:${PORT:-5001}/docs"
+print_success "Starting Text-to-SQL service on port ${PORT:-8080}"
+print_info "API docs available at: http://localhost:${PORT:-8080}/docs"
 echo ""
 
-python3 -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-5001} --reload
+python3 -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080} --reload
