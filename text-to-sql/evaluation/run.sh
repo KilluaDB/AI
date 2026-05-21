@@ -19,9 +19,9 @@ echo "Starting Foo dataset prediction (PostgreSQL)..."
 start_time=$(date +%s)
 python ./run.py --dataset_name "bird" \
    --dataset_mode="test" \
-   --input_file "./data/foo/test.json" \
-   --output_file "./outputs/foo/output_bird.json" \
-   --log_file "./outputs/foo/log.txt" \
+   --input_file "../data/foo/test.json" \
+   --output_file "../outputs/foo/output_bird.json" \
+   --log_file "../outputs/foo/log.txt" \
    --use_postgres
 end_time=$(date +%s)
 elapsed=$(( end_time - start_time ))

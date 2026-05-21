@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
+import os
+import sys
+import time
+import argparse
+import json
+import traceback
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.utils import *
+from core.chat_manager import ChatManagerPG
 from core.chat_manager import ChatManager
 from core.const import SYSTEM_NAME
 from tqdm import tqdm
-import time
-import argparse
-import sys
-import os
-import json
-import traceback
 
 
 def _build_pg_config() -> dict:
@@ -83,8 +85,8 @@ def init_bird_message(idx: int, item: dict, db_path: str=None, use_gold_schema: 
 
 
 def run_batch(dataset_name, input_file, output_file, db_path, tables_json_path, start_pos=0, log_file=None, dataset_mode='dev', use_gold_schema=False, without_selector=False, max_samples=None, use_postgres=False):
+    print(f"use_postgres = {use_postgres}")
     if use_postgres:
-        from core.chat_manager import ChatManagerPG
         db_config = _build_pg_config()
         chat_manager = ChatManagerPG(
             db_config=db_config,
@@ -95,6 +97,7 @@ def run_batch(dataset_name, input_file, output_file, db_path, tables_json_path, 
             without_selector=without_selector,
         )
     else:
+        print("Use func from core.llm in chat_manager_pg.py")
         chat_manager = ChatManager(
             data_path=db_path,
             tables_json_path=tables_json_path,
@@ -233,7 +236,6 @@ if __name__ == "__main__":
     parser.add_argument('--without_selector', action='store_true', default=False)
     parser.add_argument('--use_postgres', action='store_true', default=False, help='use PostgreSQL agents (schema from DB, not tables.json)')
     args = parser.parse_args()
-    # 打印args中的键值对
     for key, value in vars(args).items():
         print(f"{key}: {value}")
 
