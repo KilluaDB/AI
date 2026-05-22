@@ -4,6 +4,25 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Check Python
+if ! command -v python3 &> /dev/null; then
+    print_error "Python3 is not installed"
+    exit 1
+fi
+
+# Create virtual environment if not exists (local to evaluation/, separate from main service)
+if [ ! -d "venv" ]; then
+    print_info "Creating virtual environment..."
+    python3 -m venv venv
+fi
+
+# Activate virtual environment
+source venv/bin/activate
+
+# Install dependencies (uses evaluation/requirements.txt)
+print_info "Installing dependencies..."
+pip install -r requirements.txt --quiet
+
 # PostgreSQL connection (override these or export before running)
 export PG_HOST="${PG_HOST:-localhost}"
 export PG_PORT="${PG_PORT:-5432}"
@@ -20,17 +39,17 @@ mode_predict="gpt"
 # =============================================================================
 # Small evaluation: foo test (20 samples) - same as run.sh test, try before full dev
 # =============================================================================
-FOO_PRED="./outputs/foo/predict_test.json"
-FOO_GOLD="./data/foo/test_gold.sql"
-FOO_DB_ROOT="./data/foo/test_databases/"
-FOO_DIFF_JSON="./data/foo/test.json"
+FOO_PRED="../outputs/foo/predict_test.json"
+FOO_GOLD="../data/foo/test_gold.sql"
+FOO_DB_ROOT="../data/foo/test_databases/"
+FOO_DIFF_JSON="../data/foo/test.json"
 
 if [ -f "$FOO_PRED" ] && [ -f "$FOO_GOLD" ]; then
     echo "=============================================="
     echo "Small evaluation (foo test, 20 samples)"
     echo "=============================================="
     echo "Evaluate EX on foo test..."
-    python ./evaluation/evaluation_bird_ex.py --db_root_path "$FOO_DB_ROOT" \
+    python ./evaluation_bird_ex.py --db_root_path "$FOO_DB_ROOT" \
         --predicted_sql_json_path "$FOO_PRED" \
         --data_mode "test" \
         --ground_truth_sql_path "$FOO_GOLD" \
@@ -39,7 +58,7 @@ if [ -f "$FOO_PRED" ] && [ -f "$FOO_GOLD" ]; then
         --diff_json_path "$FOO_DIFF_JSON" \
         --meta_time_out $meta_time_out
     echo "Evaluate VES on foo test..."
-    python ./evaluation/evaluation_bird_ves.py \
+    python ./evaluation_bird_ves.py \
         --db_root_path "$FOO_DB_ROOT" \
         --predicted_sql_json_path "$FOO_PRED" \
         --data_mode "test" \

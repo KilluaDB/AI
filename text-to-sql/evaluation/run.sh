@@ -52,28 +52,24 @@ fi
 # Load environment variables
 export $(cat ../.env | grep -v '^#' | xargs)
 
-# # Check Python
-# if ! command -v python3 &> /dev/null; then
-#     print_error "Python3 is not installed"
-#     exit 1
-# fi
+# Check Python
+if ! command -v python3 &> /dev/null; then
+    print_error "Python3 is not installed"
+    exit 1
+fi
 
-# # Create virtual environment if not exists (local to evaluation/, separate from main service)
-# if [ ! -d "venv" ]; then
-#     print_info "Creating virtual environment..."
-#     python3 -m venv venv
-# fi
+# Create virtual environment if not exists (local to evaluation/, separate from main service)
+if [ ! -d "venv" ]; then
+    print_info "Creating virtual environment..."
+    python3 -m venv venv
+fi
 
-# # Activate virtual environment
-# source venv/bin/activate
+# Activate virtual environment
+source venv/bin/activate
 
-# # Install dependencies (uses evaluation/requirements.txt)
-# print_info "Installing dependencies..."
-# pip install -r requirements.txt --quiet
-
-# if [ "$LOCAL_DEV" = "true" ]; then
-#    print_warning "LOCAL_DEV is enabled! K8s database hostnames will be rerouted to localhost."
-# fi
+# Install dependencies (uses evaluation/requirements.txt)
+print_info "Installing dependencies..."
+pip install -r requirements.txt --quiet
 
 # PostgreSQL connection settings (used when --use_postgres is passed)
 export PG_HOST="${PG_HOST:-localhost}"
