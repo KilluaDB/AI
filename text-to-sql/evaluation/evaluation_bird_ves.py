@@ -63,6 +63,16 @@ def iterated_execute_sql(predicted_sql, ground_truth, db_place, iterate_num):
 
 
 def execute_model(predicted_sql, ground_truth, db_place, idx, iterate_num, meta_time_out):
+    """
+    Capture timeouts and execution errors instead of silently turning them into
+    time_ratio=0. A time_ratio of 0 in VES now means *one of three* things
+    that can be told apart via the extra fields: (a) result sets didn't match,
+    (b) the query timed out, or (c) the query raised. Stderr is logged once
+    per failing item so silent failures don't hide behind low VES.
+    """
+    timed_out = False
+    error_msg = None
+    time_ratio = 0
     try:
         # you can personalize the total timeout number
         # larger timeout leads to more stable ves
@@ -71,17 +81,21 @@ def execute_model(predicted_sql, ground_truth, db_place, idx, iterate_num, meta_
             print(idx, file=sys.stdout, flush=True)
         time_ratio = func_timeout(meta_time_out * iterate_num, iterated_execute_sql,
                                   args=(predicted_sql, ground_truth, db_place, iterate_num))
-        # print([idx, math.sqrt(time_ratio)])
     except KeyboardInterrupt:
         sys.exit(0)
     except FunctionTimedOut:
-        result = [(f'timeout',)]
-        time_ratio = 0
+        timed_out = True
     except Exception as e:
-        result = [(f'error',)]  # possibly len(query) > 512 or not executable
-        time_ratio = 0
-    result = {'sql_idx': idx, 'time_ratio': time_ratio}
-    return result
+        error_msg = f"{type(e).__name__}: {e}".strip()
+        print(f"[VES] idx={idx} db_place={db_place} error: {error_msg}",
+              file=sys.stderr, flush=True)
+
+    return {
+        'sql_idx': idx,
+        'time_ratio': time_ratio,
+        'timeout': timed_out,
+        'error': error_msg,
+    }
 
 
 def package_sqls(sql_path, db_root_path, mode='gpt', data_mode='dev'):
@@ -207,6 +221,17 @@ if __name__ == '__main__':
     query_pairs = list(zip(pred_queries, gt_queries))
     run_sqls_parallel(query_pairs, iterate_num=100, db_places=db_paths, num_cpus=args.num_cpus, meta_time_out=args.meta_time_out)
     exec_result = sort_results(exec_result)
+
+    # Surface silent failures (mirrors evaluation_bird_ex.py): a 0 VES used to
+    # cover "no row-set match", "timeout", and "raised an exception" all the
+    # same way. Now we report each cause separately.
+    total = len(exec_result)
+    timeouts = sum(1 for r in exec_result if r.get('timeout'))
+    errors = sum(1 for r in exec_result if r.get('error'))
+    matched = sum(1 for r in exec_result if r.get('time_ratio', 0) != 0)
+    print(f"\nVES exec summary: total={total}, matched={matched}, "
+          f"timeouts={timeouts}, errors={errors}")
+
     print('start calculate')
     simple_ves, moderate_ves, challenging_ves, ves, count_lists = \
         compute_ves_by_diff(exec_result, args.diff_json_path)

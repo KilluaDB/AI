@@ -8,9 +8,7 @@ from func_timeout import func_timeout, FunctionTimedOut
 from db_utils import get_pg_connection, normalize_pg_sql
 
 def replace_multiple_spaces(text):
-    # 定义正则表达式，匹配多个空字符
     pattern = r'\s+'
-    # 将多个空字符替换成一个空格
     new_text = re.sub(pattern, ' ', text)
     return new_text
 

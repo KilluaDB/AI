@@ -16,6 +16,36 @@ total_response_tokens = 0
 # ensure we only print the model banner once per process
 _model_banner_printed = False
 
+# ensure we only configure openai (api_key / api_base) once per process
+_openai_configured = False
+
+
+def _configure_openai_from_env():
+    """
+    Configure the openai client from LLM_* env vars on first use.
+
+    The FastAPI entry point (main.py -> agent_service.py) already calls
+    openai.api_key / api_base directly at startup. Standalone entry points
+    (e.g. evaluation/run.py) do not, so we lazily configure here using the
+    same env vars (LLM_API_KEY, LLM_API_BASE) loaded by start.sh / run.sh.
+    Falls back to OPENAI_API_KEY / OPENAI_API_BASE if LLM_* are not set.
+    """
+    global _openai_configured
+    if _openai_configured:
+        return
+
+    api_key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
+    api_base = os.getenv("LLM_API_BASE") or os.getenv("OPENAI_API_BASE")
+
+    if api_key:
+        openai.api_key = api_key
+    if api_base:
+        openai.api_base = api_base
+    openai.api_type = "open_ai"
+    openai.api_version = None
+
+    _openai_configured = True
+
 
 def init_log_path(my_log_path):
     global total_prompt_tokens
@@ -35,15 +65,19 @@ def init_log_path(my_log_path):
 def api_func(prompt:str, model_name: str = "gpt-4o"):
     global _model_banner_printed
 
+    # Ensure openai.api_key / api_base are set (no-op if already configured by AgentService)
+    _configure_openai_from_env()
+
+    # Allow LLM_MODEL from .env to override the caller-supplied model_name
+    # (keeps evaluation/run.py consistent with the FastAPI service)
+    env_model = os.getenv("LLM_MODEL")
+    if env_model:
+        model_name = env_model
+
     if not _model_banner_printed:
-        print(f"\nUse OpenAI model: {model_name}\n")
+        print(f"\nUse OpenAI model: {model_name} (api_base={openai.api_base})\n")
         _model_banner_printed = True
-    
-    # Use 'model' parameter for all OpenAI-compatible APIs (Groq, Gemini, etc.)
-    # 'engine' is only for Azure OpenAI
-    openai.api_version = None
-    openai.api_type = "open_ai"
-    
+
     # max_tokens caps output to avoid unbounded or looping completions (e.g. SQLCoder on chatty prompts)
     # request_timeout fails fast if the backend hangs
     response = openai.ChatCompletion.create(
