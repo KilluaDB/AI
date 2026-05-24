@@ -4,23 +4,32 @@ import sys
 import json
 import argparse
 import multiprocessing as mp
+import logging
 from func_timeout import func_timeout, FunctionTimedOut
 from db_utils import get_pg_connection, normalize_pg_sql
+
+# Configure logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+logger.propagate = False  # Prevent duplicate logging to root logger
 
 def replace_multiple_spaces(text):
     pattern = r'\s+'
     new_text = re.sub(pattern, ' ', text)
     return new_text
 
+
 def load_json(dir):
     with open(dir, 'r', encoding='utf8') as j:
         contents = json.loads(j.read())
     return contents
 
+
 def save_json_file(path, data):
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
         print(f"save json file to {path}")
+
 
 def result_callback(result):
     exec_result.append(result)
@@ -42,23 +51,42 @@ def execute_sql(predicted_sql, ground_truth, db_place):
 
 
 
-def execute_model(predicted_sql,ground_truth, db_place, idx, meta_time_out):
+def execute_model(predicted_sql, ground_truth, db_place, idx, meta_time_out):
+    """
+    Run pred vs gold and classify the outcome into pass / mismatch / timeout /
+    exec_error. The legacy `res` (0/1) is kept for backward compatibility with
+    scoring; the new fields surface *why* a 0 happened so the post-run
+    summary can distinguish silent failures from real wrong answers.
+    """
+    error_type = 'pass'
+    error_msg = None
+    pred_rc = None
+    gt_rc = None
+    res = 0
     try:
-        res = func_timeout(meta_time_out, execute_sql,
-                                  args=(predicted_sql, ground_truth, db_place))
+        res, pred_rc, gt_rc = func_timeout(meta_time_out, execute_sql,
+                                           args=(predicted_sql, ground_truth, db_place))
+        if res == 0:
+            error_type = 'mismatch'
     except KeyboardInterrupt:
         sys.exit(0)
     except FunctionTimedOut:
-        result = [(f'timeout',)]
-        res = 0
+        error_type = 'timeout'
+        print(f"[EX] idx={idx} db_place={db_place} timeout",
+              file=sys.stderr, flush=True)
     except Exception as e:
-        result = [(f'error',)]  # possibly len(query) > 512 or not executable
-        res = 0
-    # print(result)
-    # result = str(set([ret[0] for ret in result]))
-    result = {'sql_idx': idx, 'res': res}
-    # print(result)
-    return result
+        error_type = 'exec_error'
+        error_msg = f"{type(e).__name__}: {e}".strip()
+        print(f"[EX] idx={idx} db_place={db_place} error: {error_msg}",
+              file=sys.stderr, flush=True)
+    return {
+        'sql_idx': idx,
+        'res': res,
+        'error_type': error_type,
+        'error_msg': error_msg,
+        'pred_row_count': pred_rc,
+        'gold_row_count': gt_rc,
+    }
 
 
 def package_sqls(sql_path, db_root_path, mode='gpt', data_mode='dev'):
@@ -84,6 +112,7 @@ def package_sqls(sql_path, db_root_path, mode='gpt', data_mode='dev'):
 
     return clean_sqls, db_path_list
 
+
 def run_sqls_parallel(sqls, db_places, num_cpus=1, meta_time_out=30.0):
     pool = mp.Pool(processes=num_cpus)
     for i, sql_pair in enumerate(sqls):
@@ -93,8 +122,10 @@ def run_sqls_parallel(sqls, db_places, num_cpus=1, meta_time_out=30.0):
     pool.close()
     pool.join()
 
+
 def sort_results(list_of_dicts):
   return sorted(list_of_dicts, key=lambda x: x['sql_idx'])
+
 
 def compute_acc_by_diff(exec_results, diff_json_path):
     num_queries = len(exec_results)
@@ -136,7 +167,6 @@ def compute_acc_by_diff(exec_results, diff_json_path):
     all_acc = sum(results)/num_queries
     count_lists = [len(simple_results), len(moderate_results), len(challenging_results), num_queries]
     return simple_acc * 100, moderate_acc * 100, challenging_acc * 100, all_acc * 100, count_lists
-
 
 
 def print_data(score_lists,count_lists):
@@ -194,7 +224,46 @@ if __name__ == '__main__':
         item['res'] = exec_result[i]['res']
         result_json_lst.append(item)
     save_json_file(result_json_path, result_json_lst)
-    
+
+    # Per-failure dump: walk results in idx order and emit a human-readable
+    # block for everything that didn't pass, joining worker output with the
+    # original question/evidence from diff_json.
+    total = len(exec_result)
+    passed = sum(1 for r in exec_result if r.get('error_type') == 'pass')
+    mismatches = sum(1 for r in exec_result if r.get('error_type') == 'mismatch')
+    timeouts = sum(1 for r in exec_result if r.get('error_type') == 'timeout')
+    exec_errors = sum(1 for r in exec_result if r.get('error_type') == 'exec_error')
+
+    print('\n================================ EX FAILURES ================================')
+    any_failed = False
+    for r in exec_result:
+        if r.get('error_type') == 'pass':
+            continue
+        any_failed = True
+        i = r['sql_idx']
+        item = raw_json_data[i] if i < len(raw_json_data) else {}
+        db_id = item.get('db_id', db_paths[i] if i < len(db_paths) else '?')
+        question = item.get('question', '')
+        evidence = item.get('evidence', '')
+        pred_sql = pred_sqls[i] if i < len(pred_sqls) else ''
+        gold_sql = gt_sqls[i] if i < len(gt_sqls) else ''
+        reason = r.get('error_type', 'unknown')
+        print(f"[EX FAIL] idx={i} db_id={db_id} reason={reason}")
+        print(f"  question: {question}")
+        if evidence:
+            print(f"  evidence: {evidence}")
+        print(f"  pred_sql: {pred_sql}")
+        print(f"  gold_sql: {gold_sql}")
+        if reason == 'mismatch':
+            print(f"  pred_row_count={r.get('pred_row_count')} gold_row_count={r.get('gold_row_count')}")
+        elif reason == 'exec_error':
+            print(f"  error: {r.get('error_msg')}")
+    if not any_failed:
+        print('(no failures)')
+
+    print(f"\nEX exec summary: total={total} passed={passed} "
+          f"mismatches={mismatches} timeouts={timeouts} exec_errors={exec_errors}")
+
     print('start calculate')
     simple_acc, moderate_acc, challenging_acc, acc, count_lists = \
         compute_acc_by_diff(exec_result, args.diff_json_path)
@@ -202,4 +271,3 @@ if __name__ == '__main__':
     print_data(score_lists,count_lists)
     print('===========================================================================================')
     print("Finished evaluation")
-    
