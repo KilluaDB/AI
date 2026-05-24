@@ -7,7 +7,7 @@ import os
 import re
 import json
 import time
-import psycopg2
+import psycopg2  # pyright: ignore[reportMissingModuleSource]
 from typing import Dict, List, Any
 from core.const import subq_pattern
 
@@ -35,6 +35,13 @@ def is_valid_date_column(col_value_lst):
             return False
     return True
 
+def parse_analysis_from_string(input_string):
+    pattern = r'\{.*?\}'
+    match = re.findall(pattern, input_string, re.DOTALL)[-1]
+    json_dict = json.loads(match)
+    analysis=json_dict['reasoning']
+    label = True if 'yes' in json_dict['judgment'].lower() else False
+    return label, analysis
 
 def is_email(string):
     """Check if string is an email address."""
