@@ -28,8 +28,8 @@ if not logger.handlers:
     logger.addHandler(ch)
 
 from core.const import (
-    SELECTOR_NAME, DECOMPOSER_NAME, REFINER_NAME, SYSTEM_NAME,
-    selector_template, decompose_template_bird, decompose_template_spider, refiner_template
+    SELECTOR_NAME, DECOMPOSER_NAME, SQLReviewer_NAME, REFINER_NAME, SYSTEM_NAME,
+    selector_template, decompose_template_bird, decompose_template_spider, refiner_template, review_template
 )
 from core.utils import (
     extract_world_info, 
@@ -37,7 +37,8 @@ from core.utils import (
     is_valid_date_column,
     parse_json, 
     parse_sql_from_string, 
-    add_prefix
+    add_prefix,
+    parse_analysis_from_string
 )
 from func_timeout import func_set_timeout, FunctionTimedOut
 
@@ -59,11 +60,81 @@ class BaseAgent:
     name = ""
     description = ""
 
-    def __init__(self):
-        pass
+    def __init__(self, db_config: Dict[str, Any] = None):
+        self.db_config = db_config
+        self._current_schema = None
 
     def talk(self, message: dict):
         raise NotImplementedError
+
+    def _get_pg_connection(self, schema: str = None):
+        """Get PostgreSQL connection, optionally setting search_path to *schema*."""
+        if not self.db_config:
+            raise RuntimeError(
+                f"{self.name or type(self).__name__}: db_config is required "
+                f"to open a PostgreSQL connection"
+            )
+        conn = psycopg2.connect(
+            host=self.db_config['host'],
+            port=self.db_config['port'],
+            user=self.db_config['user'],
+            password=self.db_config['password'],
+            dbname=self.db_config['dbname']
+        )
+        # Setting search_path lets queries omit the schema-qualified table name
+        # (e.g. `SELECT * FROM users` instead of `SELECT * FROM sales.users`).
+        if schema:
+            conn.autocommit = True
+            cur = conn.cursor()
+            cur.execute('SET search_path TO %s', (schema,))
+            cur.close()
+        return conn
+
+    @staticmethod
+    def _to_json_safe(value):
+        """Coerce a single cell value into a JSON-serializable form.
+
+        psycopg2 returns native Python types for many SQL types (e.g. DATE ->
+        datetime.date, NUMERIC -> Decimal, UUID -> uuid.UUID). These flow onto
+        the message via `exec_result['data']` and later break `json.dumps` in
+        downstream code (run.py). We pass through bool/int/float/str/None as-is
+        and fall back to `str()` for everything else.
+        """
+        if value is None or isinstance(value, (bool, int, float, str)):
+            return value
+        return str(value)
+
+    @func_set_timeout(120)
+    def _execute_sql(self, sql: str) -> dict:
+        """Execute SQL on PostgreSQL and return a normalized result dict."""
+        try:
+            conn = self._get_pg_connection(schema=self._current_schema)
+            cursor = conn.cursor()
+            cursor.execute(sql)
+            result = cursor.fetchall()
+            cursor.close()
+            conn.close()
+            result = [tuple(self._to_json_safe(v) for v in row) for row in result]
+            return {
+                "sql": str(sql),
+                "data": result[:5],
+                "pg_error": "",
+                "exception_class": ""
+            }
+        except psycopg2.Error as er:
+            return {
+                "sql": str(sql),
+                "data": None,
+                "pg_error": str(er.pgerror) if er.pgerror else str(er),
+                "exception_class": str(er.__class__.__name__)
+            }
+        except Exception as e:
+            return {
+                "sql": str(sql),
+                "data": None,
+                "pg_error": str(e),
+                "exception_class": str(type(e).__name__)
+            }
 
 
 class Selector(BaseAgent):
@@ -88,46 +159,22 @@ class Selector(BaseAgent):
             lazy: If True, load schema info lazily
             without_selector: If True, skip pruning step
         """
-        super().__init__()
-        self.db_config = db_config
+        super().__init__(db_config=db_config)
         self.model_name = model_name
         self.dataset_name = dataset_name
         self.without_selector = without_selector
         self._message = {}
-        
+
         # Per-db_id schema cache: {db_id: {desc_dict, value_dict, pk_dict, fk_dict}}
         self._schema_cache = {}
         # Currently active db_id and its info
         self.db_info = {}
         self.schema_loaded = False
-        self._current_schema = None
-        
+
         if schema_info:
             self._load_schema_from_info(schema_info)
         elif not lazy:
             self._load_db_info()
-
-    def _get_pg_connection(self, schema: str = None):
-        """Get PostgreSQL connection, optionally setting search_path to *schema*."""
-        conn = psycopg2.connect(
-            host=self.db_config['host'],
-            port=self.db_config['port'],
-            user=self.db_config['user'],
-            password=self.db_config['password'],
-            dbname=self.db_config['dbname']
-        )
-        """
-        It sets the default workspace for all subsequent queries made using this connection.
-            Eliminates the Need for "Qualified" Table Names
-                SELECT * FROM sales.users; -> SELECT * FROM users;
-            Allows the LLM to write simpler, cleaner SQL, reducing the chance of syntax errors.
-        """
-        if schema:
-            conn.autocommit = True
-            cur = conn.cursor()
-            cur.execute('SET search_path TO %s', (schema,))
-            cur.close()
-        return conn
 
     def _load_schema_from_info(self, schema_info: Dict[str, Any]):
         """
@@ -791,11 +838,146 @@ class Decomposer(BaseAgent):
         
         logger.info(f"\033[1;32m[DECOMPOSER OUTPUT]\033[0m")
         logger.info(f"Generated SQL: {res}")
-        logger.info(f"Forwarding to: {REFINER_NAME}")
+        logger.info(f"Forwarding to: {SQLReviewer_NAME}")
         logger.info("="*60)
         
-        message['send_to'] = REFINER_NAME
+        message['send_to'] = SQLReviewer_NAME
 
+
+class SQLReviewer(BaseAgent):
+    """
+    Review the generated SQL.
+    """
+
+    def __init__(self, db_config: Dict[str, Any], dataset_name: str = "custom"):
+        super().__init__(db_config=db_config)
+        self.dataset_name = dataset_name
+        self._message = {}
+        self.name = SQLReviewer_NAME
+
+    def is_need_fix(self, exec_result: dict):
+        if exec_result is None:
+            return True
+
+        data = exec_result.get('data', None)
+        if data is not None:
+            if len(data) == 0:
+                exec_result['pg_error'] = 'no data selected'
+                return True
+            for row in data:
+                for val in row:
+                    if val is None:
+                        exec_result['pg_error'] = 'exist None value, you can add `NOT NULL` in SQL'
+                        return True
+            return False
+        return True
+
+    def talk(self, message: dict):
+        """
+        :param message: {
+                         "filtered_items": filtered_items,
+                         "exec_result": exec_result,
+                         "query": original user question,
+                         "desc_str": schema description (for Refiner),
+                         "fk_str": foreign key info (for Refiner),
+                         "db_id": database schema name (for Refiner)
+                        }
+        :return: review_pass, analysis
+        """
+        if message['send_to'] != self.name:
+            return
+
+        self._current_schema = message.get('db_id')
+        self._message = message
+
+        logger.info("="*60)
+        logger.info(f"\033[1;33m[REVIEWER] Starting SQL Semantic Analysis\033[0m")
+        logger.info('SQLReviewer is working...')
+
+        filtered_items = message.get('filtered_items') or {
+            'desc_str': message.get('desc_str', ''),
+            'fk_str': message.get('fk_str', ''),
+            'query': message.get('query', ''),
+        }
+        message['filtered_items'] = filtered_items
+
+        exec_result = message.get('exec_result')
+        if exec_result is None:
+            current_sql = message.get('final_sql') or message.get('pred', '')
+            logger.info('No exec_result on message; executing SQL inside SQLReviewer...')
+            try:
+                exec_result = self._execute_sql(current_sql)
+            except FunctionTimedOut:
+                exec_result = {
+                    'sql': current_sql,
+                    'data': None,
+                    'pg_error': 'timeout',
+                    'exception_class': 'FunctionTimedOut',
+                }
+            except Exception as e:
+                exec_result = {
+                    'sql': current_sql,
+                    'data': None,
+                    'pg_error': str(e),
+                    'exception_class': type(e).__name__,
+                }
+            message['exec_result'] = exec_result
+
+        # ── Gate 1: Execution sanity check ────────────────────────────────────
+        if exec_result is None:
+            message['review_pass'] = False
+            message['review_analysis'] = "SQL did not execute — forwarding to Refiner for repair."
+            message['send_to'] = REFINER_NAME
+            logger.info('Execution result is None, forwarding to Refiner...')
+            return
+
+        if self.is_need_fix(exec_result):
+            message['review_pass'] = False
+            message['review_analysis'] = "Execution error detected — forwarding to Refiner for repair."
+            message['send_to'] = REFINER_NAME
+            logger.info('Execution error detected, forwarding to Refiner...')
+            return
+    
+        # ── Gate 2: Semantic review ───────────────────────────────
+        logger.info('Running rubber duck semantic review...')
+        current_sql = message["exec_result"]["sql"]
+
+        prompt = review_template.format(desc_str=filtered_items["desc_str"],
+                                        fk_str=filtered_items["fk_str"],
+                                        text=filtered_items["query"],
+                                        current_sql=current_sql)
+
+        word_info = extract_world_info(self._message)
+        reply = LLM_API_FUC(prompt, **word_info).strip()
+
+        logger.info(f"\033[1;32m[REVIEWER LLM RESPONSE]\033[0m")
+        logger.debug(f"Full response:\n{reply}")
+
+        try:
+            label, analysis = parse_analysis_from_string(reply)
+        except Exception as e:
+            logging.error('Parse analysis error: %s', str(e))
+            message['review_pass'] = True
+            # When SQLReviewer terminates the pipeline (no Refiner pass), it must
+            # publish `pred` itself so downstream consumers (e.g. evaluation/run.py)
+            # don't KeyError on `o['pred']`.
+            message['pred'] = current_sql
+            message['send_to'] = SYSTEM_NAME
+            return
+
+        message['review_pass'] = label
+        message['review_analysis'] = analysis
+
+        if label:
+            message['pred'] = current_sql
+            message['send_to'] = SYSTEM_NAME
+            logging.info("No error found!")
+        else:
+            message['exec_result']['pg_error'] = analysis  # the CoT reasoning
+            message['exec_result']['exception_class'] = 'SemanticMismatch'
+            message['semantic_review_failed'] = True
+            message['send_to'] = REFINER_NAME
+            logging.info("Semantic error detected, passing analysis to Refiner...")
 
 class Refiner(BaseAgent):
     """Execute SQL and perform validation/refinement."""
@@ -810,56 +992,9 @@ class Refiner(BaseAgent):
             db_config: PostgreSQL connection config
             dataset_name: Dataset name for validation rules
         """
-        super().__init__()
-        self.db_config = db_config
+        super().__init__(db_config=db_config)
         self.dataset_name = dataset_name
         self._message = {}
-        self._current_schema = None
-
-    def _get_pg_connection(self, schema: str = None):
-        """Get PostgreSQL connection, optionally setting search_path."""
-        conn = psycopg2.connect(
-            host=self.db_config['host'],
-            port=self.db_config['port'],
-            user=self.db_config['user'],
-            password=self.db_config['password'],
-            dbname=self.db_config['dbname']
-        )
-        if schema:
-            conn.autocommit = True
-            cur = conn.cursor()
-            cur.execute('SET search_path TO %s', (schema,))
-            cur.close()
-        return conn
-
-    @func_set_timeout(120)
-    def _execute_sql(self, sql: str) -> dict:
-        """Execute SQL on PostgreSQL and return results."""
-        try:
-            conn = self._get_pg_connection(schema=self._current_schema)
-            cursor = conn.cursor()
-            cursor.execute(sql)
-            result = cursor.fetchall()
-            cursor.close()
-            conn.close()
-            return {
-                "sql": str(sql),
-                "data": result[:5],
-                "pg_error": "",
-                "exception_class": ""
-            }
-        except psycopg2.Error as er:
-            return {
-                "sql": str(sql),
-                "pg_error": str(er.pgerror) if er.pgerror else str(er),
-                "exception_class": str(er.__class__.__name__)
-            }
-        except Exception as e:
-            return {
-                "sql": str(sql),
-                "pg_error": str(e),
-                "exception_class": str(type(e).__name__)
-            }
 
     def _extract_identifiers_from_sql(self, sql: str) -> set:
         """Extract quoted and unquoted identifiers used in SQL."""
@@ -978,33 +1113,45 @@ class Refiner(BaseAgent):
             logger.info(f"\033[1;31m[REFINER] Terminated - Error in SQL\033[0m")
             return
         
-        is_timeout = False
-        error_info = {}
-        try:
-            logger.info(f"Executing SQL on PostgreSQL...")
-            error_info = self._execute_sql(old_sql)
-            logger.info(f"\033[1;32m[REFINER EXECUTION RESULT]\033[0m")
-            if error_info.get('data') is not None:
-                logger.info(f"Execution successful! Rows returned: {len(error_info.get('data', []))}")
-                logger.debug(f"Sample data: {error_info.get('data', [])[:3]}")
-            else:
-                logger.warning(f"Execution error: {error_info.get('pg_error', 'Unknown')}")
-        except FunctionTimedOut:
-            is_timeout = True
-            logger.warning(f"SQL execution timed out (>120s)")
-        except Exception as e:
-            is_timeout = True
-            logger.error(f"SQL execution error: {e}")
-        
-        is_need = self._is_need_refine(error_info) if error_info else True
-        
-        if not is_need and schema_info:
-            col_err = self._check_columns_exist(old_sql, schema_info)
-            if col_err:
-                logger.warning(f"Column mismatch detected: {col_err}")
-                is_need = True
-                error_info['pg_error'] = col_err
-                error_info['exception_class'] = 'ColumnNotFound'
+        semantic_failed = message.get('semantic_review_failed', False)
+        if semantic_failed:
+            logger.info("Arrived from SQLReviewer with semantic mismatch — forcing refinement")
+            analysis = message.get('review_analysis', '')
+            error_info = message.get('exec_result', {})
+            error_info['pg_error'] = analysis
+            error_info['exception_class'] = 'SemanticMismatch'
+            # Reset flag so if refiner loops back it doesn't force again
+            message['semantic_review_failed'] = False
+            is_need = True
+            is_timeout = False
+        else:
+            is_timeout = False
+            error_info = {}
+            try:
+                logger.info(f"Executing SQL on PostgreSQL...")
+                error_info = self._execute_sql(old_sql)
+                logger.info(f"\033[1;32m[REFINER EXECUTION RESULT]\033[0m")
+                if error_info.get('data') is not None:
+                    logger.info(f"Execution successful! Rows returned: {len(error_info.get('data', []))}")
+                    logger.debug(f"Sample data: {error_info.get('data', [])[:3]}")
+                else:
+                    logger.warning(f"Execution error: {error_info.get('pg_error', 'Unknown')}")
+            except FunctionTimedOut:
+                is_timeout = True
+                logger.warning(f"SQL execution timed out (>120s)")
+            except Exception as e:
+                is_timeout = True
+                logger.error(f"SQL execution error: {e}")
+            
+            is_need = self._is_need_refine(error_info) if error_info else True
+            
+            if not is_need and schema_info:
+                col_err = self._check_columns_exist(old_sql, schema_info)
+                if col_err:
+                    logger.warning(f"Column mismatch detected: {col_err}")
+                    is_need = True
+                    error_info['pg_error'] = col_err
+                    error_info['exception_class'] = 'ColumnNotFound'
         
         logger.info(f"Needs refinement: {is_need}, Timeout: {is_timeout}")
         
@@ -1030,6 +1177,7 @@ class Refiner(BaseAgent):
             message['try_times'] = message.get('try_times', 0) + 1
             message['pred'] = new_sql
             message['fixed'] = True
+            message['semantic_review_failed'] = False
             message['send_to'] = REFINER_NAME
             
             logger.info(f"\033[1;32m[REFINER OUTPUT]\033[0m")
