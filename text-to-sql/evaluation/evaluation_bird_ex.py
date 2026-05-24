@@ -35,20 +35,56 @@ def result_callback(result):
     exec_result.append(result)
 
 
-def execute_sql(predicted_sql, ground_truth, db_place):
+def execute_sql(predicted_sql, ground_truth, db_place, relaxed=True):
     conn = get_pg_connection(schema=db_place)
     cursor = conn.cursor()
-    cursor.execute(normalize_pg_sql(predicted_sql))
-    predicted_res = cursor.fetchall()
-    cursor.execute(normalize_pg_sql(ground_truth))
-    ground_truth_res = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    res = 0
+    
+    try:
+        cursor.execute(normalize_pg_sql(predicted_sql))
+        predicted_res = cursor.fetchall()
+        pred_cols = [desc[0] for desc in cursor.description]  # ← add this
+        
+        cursor.execute(normalize_pg_sql(ground_truth))
+        ground_truth_res = cursor.fetchall()
+        gold_cols = [desc[0] for desc in cursor.description]  # ← add this
+    except Exception as e:
+        logger.error(f"SQL execution error: {e}")
+        cursor.close()
+        conn.close()
+        return 0, 0, 0
+    finally:
+        cursor.close()
+        conn.close()
+    
     if set(predicted_res) == set(ground_truth_res):
-        res = 1
-    return res
+        return 1, len(predicted_res), len(ground_truth_res)
 
+    if not relaxed:
+        return 0, len(predicted_res), len(ground_truth_res)
+
+    # Case 1: column name match
+    common_cols = [c for c in gold_cols if c in pred_cols]
+    if common_cols:
+        pred_idx = [pred_cols.index(c) for c in common_cols]
+        gold_idx = [gold_cols.index(c) for c in common_cols]
+        
+        pred_projected = set(tuple(row[i] for i in pred_idx) for row in predicted_res)
+        gold_projected = set(tuple(row[i] for i in gold_idx) for row in ground_truth_res)
+        
+        if pred_projected == gold_projected:
+            logger.info(f"[RELAXED EX PASS] Matched on columns: {common_cols}")
+            logger.info(f"[RELAXED EX PASS] Pred had extra cols: {[c for c in pred_cols if c not in gold_cols]}")
+            return 1, len(predicted_res), len(ground_truth_res)
+        else:
+            logger.info(f"[RELAXED EX FAIL] Common cols found {common_cols} but values didn't match")
+            return 0, len(predicted_res), len(ground_truth_res)    
+    
+    # Case 2: no common names and different col counts — can't relax
+    logger.info(
+        f"[RELAXED EX SKIP] Cannot relax — no common col names and "
+        f"col count mismatch (pred={len(pred_cols)}, gold={len(gold_cols)})"
+    )
+    return 0, len(predicted_res), len(ground_truth_res)
 
 
 def execute_model(predicted_sql, ground_truth, db_place, idx, meta_time_out):

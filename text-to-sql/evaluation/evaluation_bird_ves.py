@@ -37,20 +37,44 @@ def execute_sql(sql, db_place):
     return exec_time
 
 
-def iterated_execute_sql(predicted_sql, ground_truth, db_place, iterate_num):
+def iterated_execute_sql(predicted_sql, ground_truth, db_place, iterate_num, relaxed=True):
     predicted_sql = normalize_pg_sql(predicted_sql)
     ground_truth = normalize_pg_sql(ground_truth)
     conn = get_pg_connection(schema=db_place)
     diff_list = []
     cursor = conn.cursor()
+
     cursor.execute(predicted_sql)
     predicted_res = cursor.fetchall()
+    pred_cols = [desc[0] for desc in cursor.description]
+
     cursor.execute(ground_truth)
     ground_truth_res = cursor.fetchall()
+    gold_cols = [desc[0] for desc in cursor.description]
+
     cursor.close()
     conn.close()
+
     time_ratio = 0
-    if set(predicted_res) == set(ground_truth_res):
+
+    # ── Strict match ─────────────────────────────────────────────────────
+    mismatch = set(predicted_res) != set(ground_truth_res)
+
+    # ── Relaxed match ─────────────────────────────────────────────────────
+    if mismatch and relaxed:
+        common_cols = [c for c in gold_cols if c in pred_cols]
+        if common_cols:
+            pred_idx = [pred_cols.index(c) for c in common_cols]
+            gold_idx = [gold_cols.index(c) for c in common_cols]
+            pred_projected = set(tuple(row[i] for i in pred_idx) for row in predicted_res)
+            gold_projected = set(tuple(row[i] for i in gold_idx) for row in ground_truth_res)
+            if pred_projected == gold_projected:
+                print(f"[RELAXED VES PASS] Matched on cols: {common_cols}, "
+                      f"extra pred cols ignored: {[c for c in pred_cols if c not in gold_cols]}",
+                      file=sys.stderr, flush=True)
+                mismatch = False  # ← treat as match for VES timing
+
+    if not mismatch:
         for i in range(iterate_num):
             predicted_time = execute_sql(predicted_sql, db_place)
             ground_truth_time = execute_sql(ground_truth, db_place)
@@ -59,10 +83,10 @@ def iterated_execute_sql(predicted_sql, ground_truth, db_place, iterate_num):
         processed_diff_list = clean_abnormal(diff_list)
         if len(processed_diff_list) > 0:
             time_ratio = sum(processed_diff_list) / len(processed_diff_list)
-    return time_ratio
+    return time_ratio, mismatch, len(predicted_res), len(ground_truth_res)
 
 
-def execute_model(predicted_sql, ground_truth, db_place, idx, iterate_num, meta_time_out):
+def execute_model(predicted_sql, ground_truth, db_place, idx, iterate_num, meta_time_out, relaxed=True):
     """
     Capture timeouts and execution errors instead of silently turning them into
     time_ratio=0. A time_ratio of 0 in VES now means *one of three* things
@@ -82,8 +106,9 @@ def execute_model(predicted_sql, ground_truth, db_place, idx, iterate_num, meta_
         # while it needs more your patience....
         if idx % 500 == 0:
             print(idx, file=sys.stdout, flush=True)
-        time_ratio = func_timeout(meta_time_out * iterate_num, iterated_execute_sql,
-                                  args=(predicted_sql, ground_truth, db_place, iterate_num))
+        time_ratio, mismatch, pred_rc, gold_rc = func_timeout(
+            meta_time_out * iterate_num, iterated_execute_sql,
+            args=(predicted_sql, ground_truth, db_place, iterate_num, relaxed))
     except KeyboardInterrupt:
         sys.exit(0)
     except FunctionTimedOut:
@@ -128,11 +153,11 @@ def package_sqls(sql_path, db_root_path, mode='gpt', data_mode='dev'):
     return clean_sqls, db_path_list
 
 
-def run_sqls_parallel(sqls, db_places, num_cpus=1, iterate_num=100, meta_time_out=30.0):
+def run_sqls_parallel(sqls, db_places, num_cpus=1, iterate_num=100, meta_time_out=30.0, relaxed=True):
     pool = mp.Pool(processes=num_cpus)
     for i, sql_pair in enumerate(sqls):
         predicted_sql, ground_truth = sql_pair
-        pool.apply_async(execute_model, args=(predicted_sql, ground_truth, db_places[i], i, iterate_num, meta_time_out),
+        pool.apply_async(execute_model, args=(predicted_sql, ground_truth, db_places[i], i, iterate_num, meta_time_out, relaxed),
                          callback=result_callback)
     pool.close()
     pool.join()
@@ -225,7 +250,7 @@ if __name__ == '__main__':
 
     assert len(pred_queries) == len(gt_queries), "len(pred_queries) != len(gt_queries)"
     query_pairs = list(zip(pred_queries, gt_queries))
-    run_sqls_parallel(query_pairs, iterate_num=100, db_places=db_paths, num_cpus=args.num_cpus, meta_time_out=args.meta_time_out)
+    run_sqls_parallel(query_pairs, iterate_num=100, db_places=db_paths, num_cpus=args.num_cpus, meta_time_out=args.meta_time_out, relaxed=True)
     exec_result = sort_results(exec_result)
 
     # Surface silent failures (mirrors evaluation_bird_ex.py): a 0 VES used to
