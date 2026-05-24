@@ -242,6 +242,22 @@ You are a PostgreSQL expert. Given a 【Database schema】 description and the �
 - Do NOT include any text before or after the SQL
 - Use PostgreSQL syntax (double quotes for identifiers, not backticks)
 
+【SQL Generation Constraints】
+- In `SELECT <column>`, just select needed columns in the 【Question】 without any unnecessary column or value
+- In `FROM <table>` or `JOIN <table>`, do not include unnecessary table
+- If use max or min func, `JOIN <table>` FIRST, THEN use `SELECT MAX(<column>)` or `SELECT MIN(<column>)`
+- If [Value examples] of <column> has 'None' or None, use `JOIN <table>` or `WHERE <column> is NOT NULL` is better
+- If use `ORDER BY <column> ASC|DESC`, add `GROUP BY <column>` before to select distinct values
+- Use 【Evidence】 to map phrases in the question to exact column names and filter values (e.g. continuation schools, direct charter-funded, district vs county).
+- If the question mentions a specific organization or type (e.g. a county office of education, or a funding type), check 【Evidence】 for which column to filter on.
+- ONLY use column names that appear in the 【Database schema】 above. Never invent or guess column names.
+- When 【Evidence】 maps a phrase to a specific column, use that EXACT column. Do not substitute a similar-sounding column from another table.
+- If multiple tables have a "name" column, choose the one from the table that owns the data being asked about.
+- Prefer simple JOINs. Only add a table to FROM/JOIN if the question actually needs columns from it.
+- Use LEFT JOIN (not INNER JOIN) when the question asks about ALL records, even those without matches in the joined table.
+- When the question says "rank", use RANK() OVER (ORDER BY ...) or ROW_NUMBER() window functions.
+- Use NULLIF(divisor, 0) to prevent division by zero errors.
+
 ==========
 
 【Database schema】
