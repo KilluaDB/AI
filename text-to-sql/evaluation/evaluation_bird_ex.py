@@ -365,19 +365,19 @@ if __name__ == '__main__':
         gold_sql = gt_sqls[i] if i < len(gt_sqls) else ''
         reason = r.get('error_type', 'unknown')
         print(f"\033[1;31m[EX FAIL] idx={i} db_id={db_id} reason={reason}\033[0m")
-        print(f"  question: {question}")
+        print(f"  \033[1;32m[question]\033[0m: {question}")
         if evidence:
-            print(f"  evidence: {evidence}")
-        print(f"  pred_sql: {pred_sql}")
-        print(f"  gold_sql: {gold_sql}")
+            print(f"  \033[1;32m[evidence]\033[0m: {evidence}")
+        print(f"  \033[1;32m[pred_sql]\033[0m: {pred_sql}")
+        print(f"  \033[1;32m[gold_sql]\033[0m: {gold_sql}")
         if reason == 'mismatch':
-            print(f"  pred_row_count={r.get('pred_row_count')} gold_row_count={r.get('gold_row_count')}")
+            print(f"  \033[1;32m[rows_count]\033[0m: pred_row_count={r.get('pred_row_count')} gold_row_count={r.get('gold_row_count')}")
         elif reason == 'exec_error':
-            print(f"  error: {r.get('error_msg')}")
+            print(f"  \033[1;32m[error]\033[0m: {r.get('error_msg')}")
     if not any_failed:
         print('(no failures)')
 
-    print(f"\nEX exec summary: total={total} passed={passed} "
+    print(f"\n\033[1;33m[EX exec summary]\033[0m: total={total} passed={passed} "
           f"mismatches={mismatches} timeouts={timeouts} exec_errors={exec_errors}")
 
     print('start calculate')

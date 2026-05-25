@@ -391,19 +391,19 @@ if __name__ == '__main__':
         else:
             reason = 'mismatch'
         print(f"\033[1;31m[VES FAIL] idx={i} db_id={db_id} reason={reason}\033[0m")
-        print(f"  question: {question}")
+        print(f"  \033[1;32m[question]\033[0m: {question}")
         if evidence:
-            print(f"  evidence: {evidence}")
-        print(f"  pred_sql: {pred_sql}")
-        print(f"  gold_sql: {gold_sql}")
+            print(f"  \033[1;32m[evidence]\033[0m: {evidence}")
+        print(f"  \033[1;32m[pred_sql]\033[0m: {pred_sql}")
+        print(f"  \033[1;32m[gold_sql]\033[0m: {gold_sql}")
         if reason == 'mismatch':
-            print(f"  pred_row_count={r.get('pred_row_count')} gold_row_count={r.get('gold_row_count')}")
+            print(f"  \033[1;32m[rows_count]\033[0m: pred_row_count={r.get('pred_row_count')} gold_row_count={r.get('gold_row_count')}")
         elif reason == 'exec_error':
-            print(f"  error: {r.get('error')}")
+            print(f"  \033[1;32m[error]\033[0m: {r.get('error')}")
     if not any_failed:
         print('(no failures)')
 
-    print(f"\nVES exec summary: total={total} matched={matched} "
+    print(f"\n\033[1;33m[VES exec summary]\033[0m: total={total} matched={matched} "
           f"mismatches={mismatches} timeouts={timeouts} errors={errors}")
 
     print('start calculate')
