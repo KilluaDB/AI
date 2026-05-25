@@ -64,6 +64,44 @@ def is_numeric_match(pred_rows, gold_rows, tolerance=1e-6):
     except Exception:
         return False
 
+
+def find_matching_column_indices(pred_rows, gold_rows):
+    """
+    For each gold column, find a pred column whose values match exactly.
+    Works regardless of column count difference.
+    Returns mapping {gold_idx: pred_idx} or None if no full mapping found.
+    """
+    if not pred_rows or not gold_rows:
+        return None
+    if len(pred_rows) != len(gold_rows):
+        return None
+
+    n_pred_cols = len(pred_rows[0])
+    n_gold_cols = len(gold_rows[0])
+
+    pred_sorted = sorted(pred_rows, key=lambda r: [str(v) for v in r])
+    gold_sorted = sorted(gold_rows, key=lambda r: [str(v) for v in r])
+
+    def cols_match_exactly(p_idx, g_idx):
+        for pred_row, gold_row in zip(pred_sorted, gold_sorted):
+            if pred_row[p_idx] != gold_row[g_idx]:
+                return False
+        return True
+
+    mapping = {}
+    used_pred = set()
+    for g_idx in range(n_gold_cols):
+        for p_idx in range(n_pred_cols):
+            if p_idx in used_pred:
+                continue
+            if cols_match_exactly(p_idx, g_idx):
+                mapping[g_idx] = p_idx
+                used_pred.add(p_idx)
+                break
+
+    return mapping if len(mapping) == n_gold_cols else None
+
+
 def iterated_execute_sql(predicted_sql, ground_truth, db_place, iterate_num, relaxed=True):
     predicted_sql = normalize_pg_sql(predicted_sql)
     ground_truth = normalize_pg_sql(ground_truth)
@@ -84,11 +122,10 @@ def iterated_execute_sql(predicted_sql, ground_truth, db_place, iterate_num, rel
 
     time_ratio = 0
 
-    # ── Strict match ─────────────────────────────────────────────────────
-    mismatch = set(predicted_res) != set(ground_truth_res)
+    if set(predicted_res) == set(ground_truth_res):   
+        mismatch = False
 
-    # ── Relaxed match ─────────────────────────────────────────────────────
-    if mismatch and relaxed:
+    else:
         # Case 1: column name match
         common_cols = [c for c in gold_cols if c in pred_cols]
         if common_cols:
@@ -109,25 +146,26 @@ def iterated_execute_sql(predicted_sql, ground_truth, db_place, iterate_num, rel
                     file=sys.stderr, flush=True)
                 mismatch = False
 
-            else:
-                print(f"[RELAXED VES FAIL] Common cols {common_cols} but values didn't match",
-                    file=sys.stderr, flush=True)
-
-        # Case 2: no common col names, same col count — try numeric tolerance
-        elif len(pred_cols) == len(gold_cols):
-            if is_numeric_match(predicted_res, ground_truth_res):
-                print(f"[RELAXED VES PASS] Numeric tolerance match, no common col names",
-                    file=sys.stderr, flush=True)
-                mismatch = False
-            else:
-                print(f"[RELAXED VES FAIL] No common col names, numeric match failed",
-                    file=sys.stderr, flush=True)
-
-        # Case 3: no common names, different col counts — can't relax
         else:
-            print(f"[RELAXED VES SKIP] Cannot relax — no common col names and "
-                f"col count mismatch (pred={len(pred_cols)}, gold={len(gold_cols)})",
-                file=sys.stderr, flush=True)
+            # Case 2: value-based column alignment (exact match, any col count)
+            mapping = find_matching_column_indices(predicted_res, ground_truth_res)
+            if mapping is not None:
+                print(f"[RELAXED VES PASS] Value-based column alignment: {mapping}",
+                      file=sys.stderr, flush=True)
+                mismatch = False
+
+            # Case 2: no common col names, same col count — try numeric tolerance
+            elif len(pred_cols) == len(gold_cols):
+                if is_numeric_match(predicted_res, ground_truth_res):
+                    print(f"[RELAXED VES PASS] Numeric tolerance match",
+                        file=sys.stderr, flush=True)
+                    mismatch = False
+
+            # Case 3: no common names, different col counts — can't relax
+            else:
+                print(f"[RELAXED VES SKIP] Cannot relax — no common col names and "
+                    f"col count mismatch (pred={len(pred_cols)}, gold={len(gold_cols)})",
+                    file=sys.stderr, flush=True)
 
     if not mismatch:
         for i in range(iterate_num):

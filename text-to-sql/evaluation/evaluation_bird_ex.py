@@ -62,7 +62,43 @@ def is_numeric_match(pred_rows, gold_rows, tolerance=1e-6):
     except Exception:
         return False
 
-def execute_sql(predicted_sql, ground_truth, db_place, relaxed=True):
+def find_matching_column_indices(pred_rows, gold_rows):
+    """
+    For each gold column, find a pred column whose values match exactly.
+    Works regardless of column count difference.
+    Returns mapping {gold_idx: pred_idx} or None if no full mapping found.
+    """
+    if not pred_rows or not gold_rows:
+        return None
+    if len(pred_rows) != len(gold_rows):
+        return None
+
+    n_pred_cols = len(pred_rows[0])
+    n_gold_cols = len(gold_rows[0])
+
+    pred_sorted = sorted(pred_rows, key=lambda r: [str(v) for v in r])
+    gold_sorted = sorted(gold_rows, key=lambda r: [str(v) for v in r])
+
+    def cols_match_exactly(p_idx, g_idx):
+        for pred_row, gold_row in zip(pred_sorted, gold_sorted):
+            if pred_row[p_idx] != gold_row[g_idx]:
+                return False
+        return True
+
+    mapping = {}
+    used_pred = set()
+    for g_idx in range(n_gold_cols):
+        for p_idx in range(n_pred_cols):
+            if p_idx in used_pred:
+                continue
+            if cols_match_exactly(p_idx, g_idx):
+                mapping[g_idx] = p_idx
+                used_pred.add(p_idx)
+                break
+
+    return mapping if len(mapping) == n_gold_cols else None
+
+def execute_sql(predicted_sql, ground_truth, db_place):
     conn = get_pg_connection(schema=db_place)
     cursor = conn.cursor()
     
@@ -89,9 +125,6 @@ def execute_sql(predicted_sql, ground_truth, db_place, relaxed=True):
     if set(predicted_res) == set(ground_truth_res):
         return 1, len(predicted_res), len(ground_truth_res)
 
-    if not relaxed:
-        return 0, len(predicted_res), len(ground_truth_res)
-
     # Case 1: column name match
     common_cols = [c for c in gold_cols if c in pred_cols]
     if common_cols:
@@ -114,13 +147,19 @@ def execute_sql(predicted_sql, ground_truth, db_place, relaxed=True):
         logger.info(f"[RELAXED EX FAIL] Common cols found {common_cols} but values didn't match")
         return 0, len(predicted_res), len(ground_truth_res)    
     
-    # Case 2: no common col names — try numeric tolerance on full result
+    # Case 2: value-based column alignment
+    mapping = find_matching_column_indices(predicted_res, ground_truth_res)
+    if mapping is not None:
+        logger.info(f"[RELAXED PASS] Value-based column alignment: {mapping}")
+        return 1, len(predicted_res), len(ground_truth_res)
+
+    # Case 3: no common col names — try numeric tolerance on full result
     if len(pred_cols) == len(gold_cols):
         if is_numeric_match(predicted_res, ground_truth_res):
             logger.info(f"[RELAXED EX PASS] Numeric tolerance match, no common col names")
             return 1, len(predicted_res), len(ground_truth_res)
 
-    # Case 3: no common names and different col counts — can't relax
+    # Case 4: no common names and different col counts
     logger.info(
         f"[RELAXED EX SKIP] Cannot relax — no common col names and "
         f"col count mismatch (pred={len(pred_cols)}, gold={len(gold_cols)})"
