@@ -121,6 +121,7 @@ def iterated_execute_sql(predicted_sql, ground_truth, db_place, iterate_num, rel
     conn.close()
 
     time_ratio = 0
+    mismatch = True
 
     if set(predicted_res) == set(ground_truth_res):   
         mismatch = False
@@ -132,10 +133,10 @@ def iterated_execute_sql(predicted_sql, ground_truth, db_place, iterate_num, rel
             pred_idx = [pred_cols.index(c) for c in common_cols]
             gold_idx = [gold_cols.index(c) for c in common_cols]
 
-            pred_projected = set(tuple(row[i] for i in pred_idx) for row in predicted_res)
-            gold_projected = set(tuple(row[i] for i in gold_idx) for row in ground_truth_res)
+            pred_projected = [tuple(row[i] for i in pred_idx) for row in predicted_res]
+            gold_projected = [tuple(row[i] for i in gold_idx) for row in ground_truth_res]
 
-            if pred_projected == gold_projected:
+            if set(pred_projected) == set(gold_projected):
                 print(f"[RELAXED VES PASS] Matched on cols: {common_cols}, "
                       f"extra pred cols ignored: {[c for c in pred_cols if c not in gold_cols]}",
                       file=sys.stderr, flush=True)

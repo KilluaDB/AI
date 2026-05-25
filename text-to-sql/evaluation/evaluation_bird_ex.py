@@ -130,11 +130,11 @@ def execute_sql(predicted_sql, ground_truth, db_place):
     if common_cols:
         pred_idx = [pred_cols.index(c) for c in common_cols]
         gold_idx = [gold_cols.index(c) for c in common_cols]
-        
-        pred_projected = set(tuple(row[i] for i in pred_idx) for row in predicted_res)
-        gold_projected = set(tuple(row[i] for i in gold_idx) for row in ground_truth_res)
-        
-        if pred_projected == gold_projected:
+                
+        pred_projected = [tuple(row[i] for i in pred_idx) for row in predicted_res]  # ← correct
+        gold_projected = [tuple(row[i] for i in gold_idx) for row in ground_truth_res]  # ← correct
+
+        if set(pred_projected) == set(gold_projected):
             logger.info(f"[RELAXED EX PASS] Matched on columns: {common_cols}")
             logger.info(f"[RELAXED EX PASS] Pred had extra cols: {[c for c in pred_cols if c not in gold_cols]}")
             return 1, len(predicted_res), len(ground_truth_res)
