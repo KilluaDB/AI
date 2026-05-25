@@ -1,4 +1,4 @@
-MAX_ROUND = 3  # max try times of one agent talk
+MAX_ROUND = 5  # max chat rounds (Selector + Decomposer + SQLReviewer + Refiner, plus Refiner retry budget)
 # DESC_LEN_LIMIT = 200  # max length of description of each column (counted by char)
 # MAX_OUTPUT_LEN = 1000  # max length of output (counted by tokens)
 # RATIO = 0.8  # soft upper bound of max
@@ -8,6 +8,7 @@ ENGINE_GPT4_32K = 'gpt-4-32k'
 
 SELECTOR_NAME = 'Selector'
 DECOMPOSER_NAME = 'Decomposer'
+SQLReviewer_NAME = 'SQLReviewer'
 REFINER_NAME = 'Refiner'
 SYSTEM_NAME = 'System'
 
@@ -241,6 +242,22 @@ You are a PostgreSQL expert. Given a 【Database schema】 description and the �
 - Do NOT include any text before or after the SQL
 - Use PostgreSQL syntax (double quotes for identifiers, not backticks)
 
+【SQL Generation Constraints】
+- In `SELECT <column>`, just select needed columns in the 【Question】 without any unnecessary column or value
+- In `FROM <table>` or `JOIN <table>`, do not include unnecessary table
+- If use max or min func, `JOIN <table>` FIRST, THEN use `SELECT MAX(<column>)` or `SELECT MIN(<column>)`
+- If [Value examples] of <column> has 'None' or None, use `JOIN <table>` or `WHERE <column> is NOT NULL` is better
+- If use `ORDER BY <column> ASC|DESC`, add `GROUP BY <column>` before to select distinct values
+- Use 【Evidence】 to map phrases in the question to exact column names and filter values (e.g. continuation schools, direct charter-funded, district vs county).
+- If the question mentions a specific organization or type (e.g. a county office of education, or a funding type), check 【Evidence】 for which column to filter on.
+- ONLY use column names that appear in the 【Database schema】 above. Never invent or guess column names.
+- When 【Evidence】 maps a phrase to a specific column, use that EXACT column. Do not substitute a similar-sounding column from another table.
+- If multiple tables have a "name" column, choose the one from the table that owns the data being asked about.
+- Prefer simple JOINs. Only add a table to FROM/JOIN if the question actually needs columns from it.
+- Use LEFT JOIN (not INNER JOIN) when the question asks about ALL records, even those without matches in the joined table.
+- When the question says "rank", use RANK() OVER (ORDER BY ...) or ROW_NUMBER() window functions.
+- Use NULLIF(divisor, 0) to prevent division by zero errors.
+
 ==========
 
 【Database schema】
@@ -316,7 +333,72 @@ SELECT "Song_Name", "Song_release_year" FROM singer WHERE "Age" = (SELECT MIN("A
 【Answer】
 """
 
+review_template = """ You are an experienced PostgreSQL database administrator. Given a 【Database schema】, 【Foreign keys】, a user 【Question】, and a 【SQL】 query, analyze whether the SQL correctly answers the question.
 
+【CRITICAL REVIEW RULES】
+- Judge ONLY against what the 【Question】 explicitly states
+- Do NOT infer requirements that are not stated in the 【Question】
+- Do NOT assume a column should be recalculated if the schema already provides it directly
+- Focus on whether the SQL returns the right rows and shape, not on whether it could theoretically be written differently
+
+【Database schema】
+{desc_str}
+【Foreign keys】
+{fk_str}
+【Question】
+{text}
+【SQL】
+{current_sql}
+
+Walk through each clause of the SQL step by step:
+1. Read the 【Question】 carefully and describe in plain English: what is being asked, how many rows do you expect in the result, and what columns?
+2. Check SELECT — does it return exactly what step 1 described?
+3. Check FROM/JOIN — are the correct tables joined on the right keys?
+4. Check WHERE/GROUP BY/ORDER BY — do the filters and groupings produce the result described in step 1? Is there any clause that contradicts the expected result shape from step 1?
+5. Final judgment — does the SQL produce exactly the result described in step 1?
+
+Your final answer must be a JSON object with no markdown, no extra text:
+{{"reasoning": "<your step by step analysis>", "judgment": "Yes"}}
+or
+{{"reasoning": "<your step by step analysis>", "judgment": "No"}}
+### Your answer:
+"""
+
+refiner_template = """
+You are a PostgreSQL expert. When executing the SQL below, an error occurred. Fix the SQL based on the query and database info.
+
+【CRITICAL OUTPUT RULES】
+- Return ONLY the corrected executable SQL query
+- Do NOT wrap output in markdown code blocks (no ```sql or ```)
+- Do NOT provide explanations, tutorials, or comments
+- Do NOT generate sample data or INSERT statements
+- Do NOT include any text before or after the SQL
+- Use PostgreSQL syntax (double quotes for identifiers, not backticks)
+
+【SQL Generation Constraints】
+- In `SELECT <column>`, just select needed columns in the 【Question】 without any unnecessary column or value
+- In `FROM <table>` or `JOIN <table>`, do not include unnecessary table
+- If use max or min func, `JOIN <table>` FIRST, THEN use `SELECT MAX(<column>)` or `SELECT MIN(<column>)`
+- If [Value examples] of <column> has 'None' or None, use `JOIN <table>` or `WHERE <column> is NOT NULL` is better
+- If use `ORDER BY <column> ASC|DESC`, add `GROUP BY <column>` before to select distinct values
+
+【Query】
+{query}
+【Evidence】
+{evidence}
+【Database schema】
+{desc_str}
+【Foreign keys】
+{fk_str}
+【Failed SQL】
+{sql}
+【PostgreSQL Error】
+{pg_error}
+【Exception】
+{exception_class}
+
+【Corrected SQL】
+"""
 oneshot_template_1 = """
 You are a PostgreSQL expert. Given a 【Database schema】 description, a knowledge 【Evidence】 and the 【Question】, you need to understand the database and knowledge, and then decompose the question into subquestions for text-to-SQL generation.
 
@@ -405,8 +487,6 @@ Question Solved.
 
 Decompose the question into sub questions, considering 【Constraints】, and generate the SQL after thinking step by step:
 """
-
-
 
 oneshot_template_2 = """
 You are a PostgreSQL expert. Given a 【Database schema】 description, a knowledge 【Evidence】 and the 【Question】, you need to understand the database and knowledge, and then decompose the question into subquestions for text-to-SQL generation.
@@ -532,62 +612,4 @@ You are a PostgreSQL expert. Given a 【Database schema】 description, a knowle
 【Evidence】
 {evidence}
 【Answer】
-"""
-
-
-baseline_template = """
-You are a PostgreSQL expert. Given a 【Database schema】 description, a knowledge 【Evidence】 and the 【Question】, generate valid PostgreSQL SQL.
-
-【CRITICAL OUTPUT RULES】
-- Return ONLY the raw executable SQL query
-- Do NOT wrap output in markdown code blocks (no ```sql or ```)
-- Do NOT provide explanations, tutorials, or comments
-- Do NOT generate sample data or INSERT statements
-- Do NOT include any text before or after the SQL
-- Use PostgreSQL syntax (double quotes for identifiers if needed, not backticks)
-
-【Database schema】
-{desc_str}
-【Question】
-{query}
-【Evidence】
-{evidence}
-【Answer】
-"""
-
-
-refiner_template = """
-You are a PostgreSQL expert. When executing the SQL below, an error occurred. Fix the SQL based on the query and database info.
-
-【CRITICAL OUTPUT RULES】
-- Return ONLY the corrected executable SQL query
-- Do NOT wrap output in markdown code blocks (no ```sql or ```)
-- Do NOT provide explanations, tutorials, or comments
-- Do NOT generate sample data or INSERT statements
-- Do NOT include any text before or after the SQL
-- Use PostgreSQL syntax (double quotes for identifiers, not backticks)
-
-【SQL Generation Constraints】
-- In `SELECT <column>`, just select needed columns in the 【Question】 without any unnecessary column or value
-- In `FROM <table>` or `JOIN <table>`, do not include unnecessary table
-- If use max or min func, `JOIN <table>` FIRST, THEN use `SELECT MAX(<column>)` or `SELECT MIN(<column>)`
-- If [Value examples] of <column> has 'None' or None, use `JOIN <table>` or `WHERE <column> is NOT NULL` is better
-- If use `ORDER BY <column> ASC|DESC`, add `GROUP BY <column>` before to select distinct values
-
-【Query】
-{query}
-【Evidence】
-{evidence}
-【Database schema】
-{desc_str}
-【Foreign keys】
-{fk_str}
-【Failed SQL】
-{sql}
-【PostgreSQL Error】
-{pg_error}
-【Exception】
-{exception_class}
-
-【Corrected SQL】
 """

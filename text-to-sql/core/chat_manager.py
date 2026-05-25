@@ -4,7 +4,7 @@ PostgreSQL variant of ChatManager.
 Uses agents_pg (Selector, Decomposer, Refiner) which read schema directly
 from PostgreSQL via information_schema instead of tables.json / SQLite.
 """
-from core.agents import Selector, Decomposer, Refiner
+from core.agents import Selector, Decomposer, SQLReviewer, Refiner
 from core.const import MAX_ROUND, SYSTEM_NAME, SELECTOR_NAME
 
 INIT_LOG_PATH_FUNC = None
@@ -43,6 +43,7 @@ class ChatManager(object):
         self.chat_group = [
             Selector(data_path=self.data_path, tables_json_path=self.tables_json_path, model_name=self.model_name, dataset_name=dataset_name, lazy=lazy, without_selector=without_selector),
             Decomposer(dataset_name=dataset_name),
+            SQLReviewer(dataset_name=dataset_name),
             Refiner(data_path=self.data_path, dataset_name=dataset_name)
         ]
         INIT_LOG_PATH_FUNC(log_path)
@@ -107,6 +108,7 @@ class ChatManagerPG:
                 without_selector=without_selector,
             ),
             Decomposer(dataset_name=dataset_name),
+            SQLReviewer(db_config=self.db_config, dataset_name=dataset_name),
             Refiner(db_config=self.db_config, dataset_name=dataset_name),
         ]
 
