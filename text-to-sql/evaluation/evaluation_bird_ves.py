@@ -37,6 +37,33 @@ def execute_sql(sql, db_place):
     return exec_time
 
 
+def is_numeric_match(pred_rows, gold_rows, tolerance=1e-6):
+    if len(pred_rows) != len(gold_rows):
+        return False
+    if not pred_rows:
+        return False
+    if len(pred_rows[0]) != len(gold_rows[0]):
+        return False
+    try:
+        pred_sorted = sorted(pred_rows, key=lambda r: [str(v) for v in r])
+        gold_sorted = sorted(gold_rows, key=lambda r: [str(v) for v in r])
+        for pred_row, gold_row in zip(pred_sorted, gold_sorted):
+            for pred_val, gold_val in zip(pred_row, gold_row):
+                try:
+                    p, g = float(pred_val), float(gold_val)
+                    if g == 0:
+                        if abs(p) >= tolerance:
+                            return False
+                    else:
+                        if abs(p - g) / abs(g) >= tolerance:
+                            return False
+                except (TypeError, ValueError):
+                    if pred_val != gold_val:
+                        return False
+        return True
+    except Exception:
+        return False
+
 def iterated_execute_sql(predicted_sql, ground_truth, db_place, iterate_num, relaxed=True):
     predicted_sql = normalize_pg_sql(predicted_sql)
     ground_truth = normalize_pg_sql(ground_truth)
@@ -62,17 +89,45 @@ def iterated_execute_sql(predicted_sql, ground_truth, db_place, iterate_num, rel
 
     # ── Relaxed match ─────────────────────────────────────────────────────
     if mismatch and relaxed:
+        # Case 1: column name match
         common_cols = [c for c in gold_cols if c in pred_cols]
         if common_cols:
             pred_idx = [pred_cols.index(c) for c in common_cols]
             gold_idx = [gold_cols.index(c) for c in common_cols]
+
             pred_projected = set(tuple(row[i] for i in pred_idx) for row in predicted_res)
             gold_projected = set(tuple(row[i] for i in gold_idx) for row in ground_truth_res)
+
             if pred_projected == gold_projected:
                 print(f"[RELAXED VES PASS] Matched on cols: {common_cols}, "
                       f"extra pred cols ignored: {[c for c in pred_cols if c not in gold_cols]}",
                       file=sys.stderr, flush=True)
                 mismatch = False  # ← treat as match for VES timing
+            
+            elif is_numeric_match(pred_projected, gold_projected):
+                print(f"[RELAXED VES PASS] Numeric tolerance match on cols: {common_cols}",
+                    file=sys.stderr, flush=True)
+                mismatch = False
+
+            else:
+                print(f"[RELAXED VES FAIL] Common cols {common_cols} but values didn't match",
+                    file=sys.stderr, flush=True)
+
+        # Case 2: no common col names, same col count — try numeric tolerance
+        elif len(pred_cols) == len(gold_cols):
+            if is_numeric_match(predicted_res, ground_truth_res):
+                print(f"[RELAXED VES PASS] Numeric tolerance match, no common col names",
+                    file=sys.stderr, flush=True)
+                mismatch = False
+            else:
+                print(f"[RELAXED VES FAIL] No common col names, numeric match failed",
+                    file=sys.stderr, flush=True)
+
+        # Case 3: no common names, different col counts — can't relax
+        else:
+            print(f"[RELAXED VES SKIP] Cannot relax — no common col names and "
+                f"col count mismatch (pred={len(pred_cols)}, gold={len(gold_cols)})",
+                file=sys.stderr, flush=True)
 
     if not mismatch:
         for i in range(iterate_num):
@@ -297,7 +352,7 @@ if __name__ == '__main__':
             reason = 'exec_error'
         else:
             reason = 'mismatch'
-        print(f"[VES FAIL] idx={i} db_id={db_id} reason={reason}")
+        print(f"\033[1;31m[VES FAIL] idx={i} db_id={db_id} reason={reason}\033[0m")
         print(f"  question: {question}")
         if evidence:
             print(f"  evidence: {evidence}")

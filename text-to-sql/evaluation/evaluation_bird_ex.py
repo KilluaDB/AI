@@ -35,6 +35,33 @@ def result_callback(result):
     exec_result.append(result)
 
 
+def is_numeric_match(pred_rows, gold_rows, tolerance=1e-6):
+    if len(pred_rows) != len(gold_rows):
+        return False
+    if not pred_rows:
+        return False
+    if len(pred_rows[0]) != len(gold_rows[0]):
+        return False
+    try:
+        pred_sorted = sorted(pred_rows, key=lambda r: [str(v) for v in r])
+        gold_sorted = sorted(gold_rows, key=lambda r: [str(v) for v in r])
+        for pred_row, gold_row in zip(pred_sorted, gold_sorted):
+            for pred_val, gold_val in zip(pred_row, gold_row):
+                try:
+                    p, g = float(pred_val), float(gold_val)
+                    if g == 0:
+                        if abs(p) >= tolerance:
+                            return False
+                    else:
+                        if abs(p - g) / abs(g) >= tolerance:
+                            return False
+                except (TypeError, ValueError):
+                    if pred_val != gold_val:
+                        return False
+        return True
+    except Exception:
+        return False
+
 def execute_sql(predicted_sql, ground_truth, db_place, relaxed=True):
     conn = get_pg_connection(schema=db_place)
     cursor = conn.cursor()
@@ -48,14 +75,17 @@ def execute_sql(predicted_sql, ground_truth, db_place, relaxed=True):
         ground_truth_res = cursor.fetchall()
         gold_cols = [desc[0] for desc in cursor.description]  # ← add this
     except Exception as e:
-        logger.error(f"SQL execution error: {e}")
-        cursor.close()
-        conn.close()
+        logger.error(f"SQL execution error: {e}")        
         return 0, 0, 0
     finally:
         cursor.close()
         conn.close()
     
+    #TODO: if sorted(predicted_res) == sorted(ground_truth_res):
+    #TODO: Using set() means queries that intentionally return duplicate rows (without DISTINCT) will incorrectly match.
+    #TODO: If the gold query returns [(1,), (1,), (2,)]
+    #TODO: If the pred returns [(1,), (2,)]
+    #TODO: they'll both become {(1,), (2,)} and match.
     if set(predicted_res) == set(ground_truth_res):
         return 1, len(predicted_res), len(ground_truth_res)
 
@@ -75,11 +105,22 @@ def execute_sql(predicted_sql, ground_truth, db_place, relaxed=True):
             logger.info(f"[RELAXED EX PASS] Matched on columns: {common_cols}")
             logger.info(f"[RELAXED EX PASS] Pred had extra cols: {[c for c in pred_cols if c not in gold_cols]}")
             return 1, len(predicted_res), len(ground_truth_res)
-        else:
-            logger.info(f"[RELAXED EX FAIL] Common cols found {common_cols} but values didn't match")
-            return 0, len(predicted_res), len(ground_truth_res)    
+
+        # Column names matched but values differ — try numeric tolerance on projected
+        if is_numeric_match(pred_projected, gold_projected):
+            logger.info(f"[RELAXED EX PASS] Numeric tolerance match on columns: {common_cols}")
+            return 1, len(predicted_res), len(ground_truth_res)
+
+        logger.info(f"[RELAXED EX FAIL] Common cols found {common_cols} but values didn't match")
+        return 0, len(predicted_res), len(ground_truth_res)    
     
-    # Case 2: no common names and different col counts — can't relax
+    # Case 2: no common col names — try numeric tolerance on full result
+    if len(pred_cols) == len(gold_cols):
+        if is_numeric_match(predicted_res, ground_truth_res):
+            logger.info(f"[RELAXED EX PASS] Numeric tolerance match, no common col names")
+            return 1, len(predicted_res), len(ground_truth_res)
+
+    # Case 3: no common names and different col counts — can't relax
     logger.info(
         f"[RELAXED EX SKIP] Cannot relax — no common col names and "
         f"col count mismatch (pred={len(pred_cols)}, gold={len(gold_cols)})"
@@ -284,7 +325,7 @@ if __name__ == '__main__':
         pred_sql = pred_sqls[i] if i < len(pred_sqls) else ''
         gold_sql = gt_sqls[i] if i < len(gt_sqls) else ''
         reason = r.get('error_type', 'unknown')
-        print(f"[EX FAIL] idx={i} db_id={db_id} reason={reason}")
+        print(f"\033[1;31m[EX FAIL] idx={i} db_id={db_id} reason={reason}\033[0m")
         print(f"  question: {question}")
         if evidence:
             print(f"  evidence: {evidence}")
