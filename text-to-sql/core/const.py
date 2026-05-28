@@ -123,18 +123,20 @@ You are a PostgreSQL expert. Given a 【Database schema】 description, a knowle
 【SQL Generation Constraints】
 - In `SELECT <column>`, just select needed columns in the 【Question】 without any unnecessary column or value
 - In `FROM <table>` or `JOIN <table>`, do not include unnecessary table
-- If use max or min func, `JOIN <table>` FIRST, THEN use `SELECT MAX(<column>)` or `SELECT MIN(<column>)`
+- Copy string literals from the 【Question】 exactly as written including punctuation
 - If [Value examples] of <column> has 'None' or None, use `JOIN <table>` or `WHERE <column> is NOT NULL` is better
-- If use `ORDER BY <column> ASC|DESC`, add `GROUP BY <column>` before to select distinct values
 - Use 【Evidence】 to map phrases in the question to exact column names and filter values (e.g. continuation schools, direct charter-funded, district vs county).
 - If the question mentions a specific organization or type (e.g. a county office of education, or a funding type), check 【Evidence】 for which column to filter on.
 - ONLY use column names that appear in the 【Database schema】 above. Never invent or guess column names.
 - When 【Evidence】 maps a phrase to a specific column, use that EXACT column. Do not substitute a similar-sounding column from another table.
 - If multiple tables have a "name" column, choose the one from the table that owns the data being asked about.
 - Prefer simple JOINs. Only add a table to FROM/JOIN if the question actually needs columns from it.
-- Use LEFT JOIN (not INNER JOIN) when the question asks about ALL records, even those without matches in the joined table.
+- Use LEFT JOIN only when the question explicitly asks to include records even if they have no match (e.g. "including those without", "even if null")
 - When the question says "rank", use RANK() OVER (ORDER BY ...) or ROW_NUMBER() window functions.
 - Use NULLIF(divisor, 0) to prevent division by zero errors.
+- Before writing any aggregation, identify the entity the question is asking about (e.g. customer, month, district). If the data has multiple rows per entity, GROUP BY that entity first before applying MAX/MIN/SUM/COUNT.
+- 【Evidence】 is authoritative — apply every definition exactly as stated
+- Every formula, threshold, and string literal in 【Evidence】 must appear in SQL verbatim
 
 ==========
 
@@ -167,31 +169,26 @@ SELECT T2."sname" FROM frpm AS T1 INNER JOIN satscores AS T2 ON T1."CDSCode" = T
 ==========
 
 【Database schema】
-# Table: schools
+# Table: employees
 [
-  (CDSCode, CDS code, unique identifier. Value examples: ['01100170109835'].),
-  (School, school name. Value examples: ['Lincoln High', 'Hayward High'].),
-  (FundingType, funding type. Value examples: ['Locally funded', 'Directly funded'].),
-  (DOC, district ownership code. Value examples: [52, 54, 56].),
-  (OpenDate, date school opened. Value examples: ['1980-07-01', '1995-09-01'].),
-  (ClosedDate, date school closed. Value examples: [None, '1999-06-30'].),
-  (Phone, phone number. Value examples: ['5105551234', None].)
+  (EmployeeID, employee id. Value examples: [1, 2, 3].),
+  (Department, department name. Value examples: ['Sales', 'HR', 'Engineering'].)
 ]
-# Table: satscores
+# Table: sales
 [
-  (cds, CDS code. Value examples: ['01100170109835'].),
-  (sname, school name. Value examples: ['Lincoln High'].),
-  (AvgScrWrite, average writing score. Value examples: [520, 480, None].)
+  (EmployeeID, employee id. Value examples: [1, 2, 3].),
+  (SaleDate, sale date in YYYYMM format. Value examples: ['202301', '202302', '202303'].),
+  (Amount, sale amount. Value examples: [150.00, 320.50, 89.75].)
 ]
 【Foreign keys】
-schools."CDSCode" = satscores."cds"
+sales."EmployeeID" = employees."EmployeeID"
 【Question】
-List school names and writing scores for schools opened after 1991 or closed before 2000. Include their phone numbers if available.
+In 2023, which Sales department employee had the highest total sales?
 【Evidence】
-Communication number refers to phone number.
+Year 2023 refers to SaleDate BETWEEN '202301' AND '202312'; Sales department refers to Department = 'Sales'
 
 【Answer】
-SELECT T1."School", T2."AvgScrWrite", T1."Phone" FROM schools AS T1 LEFT JOIN satscores AS T2 ON T1."CDSCode" = T2."cds" WHERE EXTRACT(YEAR FROM CAST(T1."OpenDate" AS TIMESTAMP)) > 1991 OR EXTRACT(YEAR FROM CAST(T1."ClosedDate" AS TIMESTAMP)) < 2000
+SELECT T1."EmployeeID" FROM employees AS T1 INNER JOIN sales AS T2 ON T1."EmployeeID" = T2."EmployeeID" WHERE T1."Department" = 'Sales' AND T2."SaleDate" BETWEEN '202301' AND '202312' GROUP BY T1."EmployeeID" ORDER BY SUM(T2."Amount") DESC LIMIT 1
 
 ==========
 
@@ -245,18 +242,15 @@ You are a PostgreSQL expert. Given a 【Database schema】 description and the �
 【SQL Generation Constraints】
 - In `SELECT <column>`, just select needed columns in the 【Question】 without any unnecessary column or value
 - In `FROM <table>` or `JOIN <table>`, do not include unnecessary table
-- If use max or min func, `JOIN <table>` FIRST, THEN use `SELECT MAX(<column>)` or `SELECT MIN(<column>)`
+- Copy string literals from the 【Question】 exactly as written including punctuation
 - If [Value examples] of <column> has 'None' or None, use `JOIN <table>` or `WHERE <column> is NOT NULL` is better
-- If use `ORDER BY <column> ASC|DESC`, add `GROUP BY <column>` before to select distinct values
-- Use 【Evidence】 to map phrases in the question to exact column names and filter values (e.g. continuation schools, direct charter-funded, district vs county).
-- If the question mentions a specific organization or type (e.g. a county office of education, or a funding type), check 【Evidence】 for which column to filter on.
 - ONLY use column names that appear in the 【Database schema】 above. Never invent or guess column names.
-- When 【Evidence】 maps a phrase to a specific column, use that EXACT column. Do not substitute a similar-sounding column from another table.
 - If multiple tables have a "name" column, choose the one from the table that owns the data being asked about.
 - Prefer simple JOINs. Only add a table to FROM/JOIN if the question actually needs columns from it.
-- Use LEFT JOIN (not INNER JOIN) when the question asks about ALL records, even those without matches in the joined table.
+- Use LEFT JOIN only when the question explicitly asks to include records even if they have no match (e.g. "including those without", "even if null")
 - When the question says "rank", use RANK() OVER (ORDER BY ...) or ROW_NUMBER() window functions.
 - Use NULLIF(divisor, 0) to prevent division by zero errors.
+- Before writing any aggregation, identify the entity the question is asking about (e.g. customer, month, district). If the data has multiple rows per entity, GROUP BY that entity first before applying MAX/MIN/SUM/COUNT.
 
 ==========
 
@@ -320,6 +314,28 @@ Show the name and the release year of the song by the youngest singer.
 
 【Answer】
 SELECT "Song_Name", "Song_release_year" FROM singer WHERE "Age" = (SELECT MIN("Age") FROM singer)
+
+==========
+
+【Database schema】
+# Table: employees
+[
+  (EmployeeID, employee id. Value examples: [1, 2, 3].),
+  (Department, department name. Value examples: ['Sales', 'HR', 'Engineering'].)
+]
+# Table: sales
+[
+  (EmployeeID, employee id. Value examples: [1, 2, 3].),
+  (SaleDate, sale date in YYYYMM format. Value examples: ['202301', '202302', '202303'].),
+  (Amount, sale amount. Value examples: [150.00, 320.50, 89.75].)
+]
+【Foreign keys】
+sales."EmployeeID" = employees."EmployeeID"
+【Question】
+In 2023, which Sales department employee had the highest total sales?
+
+【Answer】
+SELECT T1."EmployeeID" FROM employees AS T1 INNER JOIN sales AS T2 ON T1."EmployeeID" = T2."EmployeeID" WHERE T1."Department" = 'Sales' AND T2."SaleDate" BETWEEN '202301' AND '202312' GROUP BY T1."EmployeeID" ORDER BY SUM(T2."Amount") DESC LIMIT 1
 
 ==========
 
