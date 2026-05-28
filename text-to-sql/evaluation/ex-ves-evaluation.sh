@@ -30,7 +30,7 @@ export PG_DATABASE="${PG_DATABASE:-BIRD}"
 export PG_USER="${PG_USER:-postgres}"
 export PG_PASSWORD="${PG_PASSWORD:-postgres}"
 
-num_cpus=12
+num_cpus=1
 meta_time_out=30.0
 time_out=60
 mode_gt="gt"
