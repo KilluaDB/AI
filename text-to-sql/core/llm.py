@@ -1,3 +1,4 @@
+import random
 import sys
 import json
 import time
@@ -19,6 +20,8 @@ _model_banner_printed = False
 # ensure we only configure openai (api_key / api_base) once per process
 _openai_configured = False
 
+_last_call_ts = 0.0
+LLM_MIN_INTERVAL = float(os.getenv("LLM_REQUEST_DELAY", "0"))
 
 def _configure_openai_from_env():
     """
@@ -64,6 +67,11 @@ def init_log_path(my_log_path):
 
 def api_func(prompt:str, model_name: str = "gpt-4o"):
     global _model_banner_printed
+    global _last_call_ts
+
+    elapsed = time.time() - _last_call_ts
+    if elapsed < LLM_MIN_INTERVAL:
+        time.sleep(LLM_MIN_INTERVAL - elapsed)
 
     # Ensure openai.api_key / api_base are set (no-op if already configured by AgentService)
     _configure_openai_from_env()
@@ -87,6 +95,7 @@ def api_func(prompt:str, model_name: str = "gpt-4o"):
         max_tokens=2048,
         request_timeout=120,
     )
+    _last_call_ts = time.time()
     text = response['choices'][0]['message']['content'].strip()
     prompt_token = response['usage']['prompt_tokens']
     response_token = response['usage']['completion_tokens']
@@ -163,10 +172,20 @@ def safe_call_llm(input_prompt, model_name: str = "gpt-4o", **kwargs) -> str:
                     print(f'\n total_prompt_tokens,total_response_tokens: {total_prompt_tokens} {total_response_tokens}\n', file=log_fp)
                     print(f'total_prompt_tokens,total_response_tokens: {total_prompt_tokens} {total_response_tokens}\n')
             return sys_response
+        except openai.error.RateLimitError as ex:
+            wait = min(2 ** i + random.random() * 2, 60)
+            print(f"Rate limited. Sleep {wait:.1f}s")
+            time.sleep(wait)
         except Exception as ex:
-            print(ex)
-            print(f'Request {model_name} failed. try {i} times. Sleep 20 secs.')
-            time.sleep(20)
+            msg = str(ex).lower()
+            if "429" in msg or "too many requests" in msg or "rate limit" in msg:
+                wait = min(2 ** i + random.random() * 2, 60)
+                print(f"Rate limited (generic). Sleep {wait:.1f}s")
+                time.sleep(wait)
+            else:
+                print(ex)
+                print(f'Request {model_name} failed. try {i} times. Sleep 20 secs.')
+                time.sleep(20)
 
     raise ValueError('safe_call_llm error!')
 
