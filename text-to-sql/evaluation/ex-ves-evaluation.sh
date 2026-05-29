@@ -23,6 +23,32 @@ source venv/bin/activate
 print_info "Installing dependencies..."
 pip install -r requirements.txt --quiet
 
+# Color definitions
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+print_section() {
+    echo ""
+    echo -e "${BOLD}${BLUE}╔══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BOLD}${BLUE}║  $1${NC}"
+    echo -e "${BOLD}${BLUE}╚══════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+}
+
+print_step() {
+    echo -e "${CYAN}  ▶  $1${NC}"
+}
+
+print_done() {
+    echo ""
+    echo -e "${GREEN}  ✔  $1${NC}"
+}
+
 # PostgreSQL connection (override these or export before running)
 export PG_HOST="${PG_HOST:-localhost}"
 export PG_PORT="${PG_PORT:-5432}"
@@ -36,19 +62,17 @@ time_out=60
 mode_gt="gt"
 mode_predict="gpt"
 
-# =============================================================================
-# Small evaluation: foo test (20 samples) - same as run.sh test, try before full dev
-# =============================================================================
+# =================
+# Small evaluation
+# =================
 FOO_PRED="../outputs/foo/predict_test.json"
 FOO_GOLD="../data/foo/test_gold.sql"
 FOO_DB_ROOT="../data/foo/test_databases/"
 FOO_DIFF_JSON="../data/foo/test.json"
 
 if [ -f "$FOO_PRED" ] && [ -f "$FOO_GOLD" ]; then
-    echo "=============================================="
-    echo "Small evaluation (foo test, 20 samples)"
-    echo "=============================================="
-    echo "Evaluate EX on foo test..."
+    print_section "FOO TEST — EX EVALUATION"
+    print_step "Running Execution Accuracy..."
     python ./evaluation_bird_ex.py --db_root_path "$FOO_DB_ROOT" \
         --predicted_sql_json_path "$FOO_PRED" \
         --data_mode "test" \
@@ -57,7 +81,10 @@ if [ -f "$FOO_PRED" ] && [ -f "$FOO_GOLD" ]; then
         --mode_predict $mode_predict \
         --diff_json_path "$FOO_DIFF_JSON" \
         --meta_time_out $meta_time_out
-    echo "Evaluate VES on foo test..."
+    print_done "EX Evaluation Complete"
+
+    print_section "FOO TEST — VES EVALUATION"
+    print_step "Running Valid Efficiency Score..."
     python ./evaluation_bird_ves.py \
         --db_root_path "$FOO_DB_ROOT" \
         --predicted_sql_json_path "$FOO_PRED" \
@@ -66,8 +93,7 @@ if [ -f "$FOO_PRED" ] && [ -f "$FOO_GOLD" ]; then
         --num_cpus $num_cpus --meta_time_out $time_out \
         --mode_gt $mode_gt --mode_predict $mode_predict \
         --diff_json_path "$FOO_DIFF_JSON"
-    echo "Foo test evaluation done!"
-    echo ""
+    print_done "VES Evaluation Complete"
 else
     echo "Skipping foo test evaluation (missing $FOO_PRED or $FOO_GOLD). Run run.sh first to generate predict_test.json."
     echo ""
