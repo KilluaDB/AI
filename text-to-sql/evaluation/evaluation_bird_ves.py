@@ -164,7 +164,8 @@ def iterated_execute_sql(predicted_sql, ground_truth, db_place, iterate_num):
     else:
         # Case 1: column name match
         common_cols = [c for c in gold_cols if c in pred_cols]
-        if common_cols:
+        coverage = len(common_cols) / len(gold_cols) if gold_cols else 0
+        if common_cols and coverage == 1.0:
             pred_idx = [pred_cols.index(c) for c in common_cols]
             gold_idx = [gold_cols.index(c) for c in common_cols]
 

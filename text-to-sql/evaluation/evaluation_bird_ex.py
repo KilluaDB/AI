@@ -115,28 +115,25 @@ def execute_sql(predicted_sql, ground_truth, db_place, idx):
     cursor = conn.cursor()
 
     try:
-        cursor.execute(normalize_pg_sql(ground_truth))
-        ground_truth_res = cursor.fetchall()
-        gold_cols = [desc[0].lower() for desc in cursor.description]  # ← add this
-    except Exception as e:
-        logger.error(f"GOLD SQL execution error on idx={idx}: {e}")        
-        return 0, 0, 0 
+        try:
+            cursor.execute(normalize_pg_sql(ground_truth))
+            ground_truth_res = cursor.fetchall()
+            gold_cols = [desc[0].lower() for desc in cursor.description]  # ← add this
+        except Exception as e:
+            logger.error(f"GOLD SQL execution error on idx={idx}: {e}")        
+            return 0, 0, 0 
 
-    try:
-        cursor.execute(normalize_pg_sql(predicted_sql))
-        predicted_res = cursor.fetchall()
-        pred_cols = [desc[0].lower() for desc in cursor.description]  # ← add this
-    except Exception as e:
-        logger.error(f"PREDICTED SQL execution error: {e}")        
-        cursor.close()
-        conn.close()
-        return 0, 0, len(ground_truth_res)
+        try:
+            cursor.execute(normalize_pg_sql(predicted_sql))
+            predicted_res = cursor.fetchall()
+            pred_cols = [desc[0].lower() for desc in cursor.description]  # ← add this
+        except Exception as e:
+            logger.error(f"PREDICTED SQL execution error: {e}")        
+            return 0, 0, len(ground_truth_res)
 
     finally:
-        if not cursor.closed:
-            cursor.close()
-        if not conn.closed:
-            conn.close()
+        cursor.close()
+        conn.close()
 
     print(f"")
     print(f"\033[1;31m[EX DEBUG] idx={idx} | pred_rows_count={len(predicted_res)} | gold_rows_count={len(ground_truth_res)}\033[0m")
@@ -174,8 +171,9 @@ def execute_sql(predicted_sql, ground_truth, db_place, idx):
 
     # Case 1: column name match
     common_cols = [c for c in gold_cols if c in pred_cols]
+    coverage = len(common_cols) / len(gold_cols) if gold_cols else 0
     print(f"[EX DEBUG] Case 1 | common_cols={common_cols}")
-    if common_cols:
+    if common_cols and coverage == 1.0:
         pred_idx = [pred_cols.index(c) for c in common_cols]
         gold_idx = [gold_cols.index(c) for c in common_cols]
                 
