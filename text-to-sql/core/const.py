@@ -121,24 +121,32 @@ You are a PostgreSQL expert. Given a 【Database schema】 description, a knowle
 - Use PostgreSQL syntax (double quotes for identifiers, not backticks)
 
 【SQL Generation Constraints】
+
+[EVIDENCE & GROUND TRUTH]
+- 【Evidence】 is authoritative. Every definition, formula, threshold, and string mapping stated in the evidence MUST be applied exactly as written.
+- ONLY use column names that appear in the 【Database schema】 above. Never invent or guess column names.
+- If a string literal, date, or concept in the 【Question】 contradicts the 【Evidence】, the 【Evidence】 ALWAYS wins.
+- Use 【Evidence】 to map phrases in the question to exact column names and filter values.
+- If the question mentions a specific organization or type (e.g. a county office of education, or a funding type), check 【Evidence】 for which column to filter on.
+- When 【Evidence】 maps a phrase to a specific column, use that EXACT column. Do not substitute a similar-sounding column from another table.
+
+[SELECT & GROUPING]
 - In `SELECT <column>`, just select needed columns in the 【Question】 without any unnecessary column or value
 - In `FROM <table>` or `JOIN <table>`, do not include unnecessary table
-- Copy string literals from the 【Question】 exactly as written including punctuation
-- If [Value examples] of <column> has 'None' or None, use `JOIN <table>` or `WHERE <column> is NOT NULL` is better
-- Use 【Evidence】 to map phrases in the question to exact column names and filter values (e.g. continuation schools, direct charter-funded, district vs county).
-- If the question mentions a specific organization or type (e.g. a county office of education, or a funding type), check 【Evidence】 for which column to filter on.
-- ONLY use column names that appear in the 【Database schema】 above. Never invent or guess column names.
-- When 【Evidence】 maps a phrase to a specific column, use that EXACT column. Do not substitute a similar-sounding column from another table.
-- If multiple tables have a "name" column, choose the one from the table that owns the data being asked about.
-- Prefer simple JOINs. Only add a table to FROM/JOIN if the question actually needs columns from it.
-- Use LEFT JOIN only when the question explicitly asks to include records even if they have no match (e.g. "including those without", "even if null")
-- When the question says "rank", use RANK() OVER (ORDER BY ...) or ROW_NUMBER() window functions.
-- Use NULLIF(divisor, 0) to prevent division by zero errors.
-- For ratios, percentages, or multipliers, ALWAYS default to exact floating-point division by casting the numerator (e.g., CAST(column AS REAL) / NULLIF(divisor, 0)). Do NOT round or use FLOOR() unless the question explicitly asks for an integer.
-- Ensure all descriptive nouns and entity filters in the question (e.g., 'meeting', 'event') are explicitly mapped to table attributes in the WHERE clause, even if an exact name match already exists.
 - Before writing any aggregation, identify the entity the question is asking about (e.g. customer, month, district). If the data has multiple rows per entity, GROUP BY that entity first before applying MAX/MIN/SUM/COUNT.
-- 【Evidence】 is authoritative — apply every definition exactly as stated
-- Every formula, threshold, and string literal in 【Evidence】 must appear in SQL verbatim
+- When the question says "rank", use RANK() OVER (ORDER BY ...) or ROW_NUMBER() window functions.
+
+[JOINS & RELATIONSHIPS]
+- Prefer simple JOINs. Only add a table to FROM/JOIN if the question actually needs columns from it.
+- If multiple tables have a "name" column, choose the one from the table that owns the data being asked about.
+- Use LEFT JOIN only when the question explicitly asks to include records even if they have no match (e.g. "including those without", "even if null")
+
+[MATH, LOGIC & FILTERING]
+- For ratios, percentages, or multipliers, ALWAYS default to exact floating-point division by casting the numerator (e.g., CAST(column AS REAL) / NULLIF(divisor, 0)). Do NOT round or use FLOOR() unless the question explicitly asks for an integer.
+- Copy string literals from the 【Question】 exactly as written including punctuation
+- If [Value examples] of <column> has 'None' or empty values, use `JOIN <table>` or `WHERE <column> is NOT NULL` is better
+- Ensure all descriptive nouns and entity filters in the question (e.g., 'meeting', 'event') are explicitly mapped to table attributes in the WHERE clause, even if an exact name match already exists.
+- Use NULLIF(divisor, 0) to prevent division by zero errors.
 
 ==========
 
