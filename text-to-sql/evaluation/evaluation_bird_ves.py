@@ -2,6 +2,7 @@ from collections import Counter
 import decimal
 import os
 import pdb
+import re
 import sys
 import json
 import numpy as np
@@ -114,6 +115,55 @@ def find_matching_column_indices(pred_rows, gold_rows, tolerance=1e-6, order_mat
 
     return mapping if len(mapping) == n_gold_cols else None
 
+def has_outer_order_by(sql):
+    # 1. Normalize all whitespace to a single space
+    sql_clean = re.sub(r'\s+', ' ', sql)
+    sql_upper = sql_clean.upper()
+    
+    depth = 0
+    in_string = False
+    string_char = ''
+    
+    i = 0
+    while i < len(sql_upper):
+        char = sql_upper[i]
+        
+        # 2. Toggle string literal tracking
+        if char in ("'", '"'):
+            if not in_string:
+                in_string = True
+                string_char = char
+            elif char == string_char:
+                # Handle escaped quotes
+                if i + 1 < len(sql_upper) and sql_upper[i+1] == char:
+                    i += 1
+                else:
+                    in_string = False
+                    
+        # 3. Track depth only outside strings
+        elif not in_string:
+            if char == '(':
+                depth += 1
+            elif char == ')':
+                depth -= 1
+                
+            # 4. Check for 'ORDER BY' at root depth
+            elif depth == 0 and sql_upper[i:i+8] == 'ORDER BY':
+                
+                # 5. Prevent substring false-positives (e.g., REORDER BY)
+                prev_char = sql_upper[i-1] if i > 0 else ' '
+                next_char = sql_upper[i+8] if i+8 < len(sql_upper) else ' '
+                
+                # A valid SQL keyword boundary means it isn't touching letters, numbers, or underscores
+                prev_is_boundary = not (prev_char.isalnum() or prev_char == '_')
+                next_is_boundary = not (next_char.isalnum() or next_char == '_')
+                
+                if prev_is_boundary and next_is_boundary:
+                    return True
+                
+        i += 1
+        
+    return False
 
 def iterated_execute_sql(predicted_sql, ground_truth, db_place, iterate_num):
     predicted_sql = normalize_pg_sql(predicted_sql)
@@ -146,7 +196,8 @@ def iterated_execute_sql(predicted_sql, ground_truth, db_place, iterate_num):
         if not conn.closed:
             conn.close()
 
-    order_matters = "order by" in ground_truth.lower()
+    # order_matters = "order by" in ground_truth.lower()
+    order_matters = has_outer_order_by(ground_truth)
     def results_match(pred, gold):
         if order_matters:
             return pred == gold
