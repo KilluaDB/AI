@@ -856,21 +856,29 @@ class SQLReviewer(BaseAgent):
         self.name = SQLReviewer_NAME
 
     def is_need_fix(self, exec_result: dict):
+        """
+        Determines if the SQL needs refinement based strictly on database execution errors,
+        ignoring valid SQL states like empty result sets or NULL values.
+        """
+        # 1. Complete failure to return a result object
         if exec_result is None:
             return True
 
-        data = exec_result.get('data', None)
-        if data is not None:
-            if len(data) == 0:
-                exec_result['pg_error'] = 'no data selected'
-                return True
-            for row in data:
-                for val in row:
-                    if val is None:
-                        exec_result['pg_error'] = 'exist None value, you can add `NOT NULL` in SQL'
-                        return True
-            return False
-        return True
+        # 2. Check for actual SQL Engine Errors (e.g., syntax errors, missing tables, timeouts)
+        # Your talk() method nicely populates 'pg_error' when an exception is caught.
+        if exec_result.get('pg_error'):
+            return True
+
+        # 3. Query executed successfully, but the data array is completely missing
+        # (Different from an empty list [] which means 0 rows)
+        data = exec_result.get('data')
+        if data is None:
+            exec_result['pg_error'] = 'Query executed but returned no data structure.'
+            return True
+        
+        # If we reach here, the query ran successfully.
+        # It might have 0 rows, or it might contain NULLs, but syntactically and logically it is valid SQL.
+        return False
 
     def talk(self, message: dict):
         """
@@ -933,9 +941,10 @@ class SQLReviewer(BaseAgent):
 
         if self.is_need_fix(exec_result):
             message['review_pass'] = False
-            message['review_analysis'] = "Execution error detected — forwarding to Refiner for repair."
+            db_error = exec_result.get('pg_error', 'Unknown database error')
+            message['review_analysis'] = f"Database Execution Error: {db_error}. Please repair the SQL."
             message['send_to'] = REFINER_NAME
-            logger.info('Execution error detected, forwarding to Refiner...')
+            logger.info(f'Execution error detected ({db_error}), forwarding to Refiner...')
             return
     
         # ── Gate 2: Semantic review ───────────────────────────────

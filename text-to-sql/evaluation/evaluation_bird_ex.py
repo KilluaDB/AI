@@ -1,3 +1,4 @@
+import decimal
 import os
 import re
 import sys
@@ -5,6 +6,7 @@ import json
 import argparse
 import multiprocessing as mp
 import logging
+from collections import Counter
 from func_timeout import func_timeout, FunctionTimedOut
 from db_utils import get_pg_connection, normalize_pg_sql
 
@@ -34,8 +36,10 @@ def save_json_file(path, data):
 def result_callback(result):
     exec_result.append(result)
 
+def _sort_key(row):
+    return tuple(float(v) if isinstance(v, (int, float, decimal.Decimal)) else str(v) for v in row)
 
-def is_numeric_match(pred_rows, gold_rows, tolerance=1e-6):
+def is_numeric_match(pred_rows, gold_rows, tolerance=1e-6, order_matters=False):
     if len(pred_rows) != len(gold_rows):
         return False
     if not pred_rows:
@@ -43,9 +47,10 @@ def is_numeric_match(pred_rows, gold_rows, tolerance=1e-6):
     if len(pred_rows[0]) != len(gold_rows[0]):
         return False
     try:
-        pred_sorted = sorted(pred_rows, key=lambda r: [str(v) for v in r])
-        gold_sorted = sorted(gold_rows, key=lambda r: [str(v) for v in r])
-        for pred_row, gold_row in zip(pred_sorted, gold_sorted):
+        pred_iter = pred_rows if order_matters else sorted(pred_rows, key=_sort_key)
+        gold_iter = gold_rows if order_matters else sorted(gold_rows, key=_sort_key)
+
+        for pred_row, gold_row in zip(pred_iter, gold_iter):
             for pred_val, gold_val in zip(pred_row, gold_row):
                 try:
                     p, g = float(pred_val), float(gold_val)
@@ -62,7 +67,7 @@ def is_numeric_match(pred_rows, gold_rows, tolerance=1e-6):
     except Exception:
         return False
 
-def find_matching_column_indices(pred_rows, gold_rows):
+def find_matching_column_indices(pred_rows, gold_rows, tolerance=1e-6, order_matters=False):
     """
     For each gold column, find a pred column whose values match exactly.
     Works regardless of column count difference.
@@ -76,13 +81,20 @@ def find_matching_column_indices(pred_rows, gold_rows):
     n_pred_cols = len(pred_rows[0])
     n_gold_cols = len(gold_rows[0])
 
-    pred_sorted = sorted(pred_rows, key=lambda r: [str(v) for v in r])
-    gold_sorted = sorted(gold_rows, key=lambda r: [str(v) for v in r])
+    pred_iter = pred_rows if order_matters else sorted(pred_rows, key=_sort_key)
+    gold_iter = gold_rows if order_matters else sorted(gold_rows, key=_sort_key)
 
     def cols_match_exactly(p_idx, g_idx):
-        for pred_row, gold_row in zip(pred_sorted, gold_sorted):
-            if pred_row[p_idx] != gold_row[g_idx]:
-                return False
+        for p_row, g_row in zip(pred_iter, gold_iter):
+            p_val, g_val = p_row[p_idx], g_row[g_idx]
+            try:
+                p, g = float(p_val), float(g_val)
+                if g == 0:
+                    if abs(p) >= tolerance: return False
+                else:
+                    if abs(p - g) / abs(g) >= tolerance: return False
+            except (TypeError, ValueError):
+                if p_val != g_val: return False
         return True
 
     mapping = {}
@@ -98,72 +110,157 @@ def find_matching_column_indices(pred_rows, gold_rows):
 
     return mapping if len(mapping) == n_gold_cols else None
 
-def execute_sql(predicted_sql, ground_truth, db_place):
+def has_outer_order_by(sql):
+    # 1. Normalize all whitespace to a single space
+    sql_clean = re.sub(r'\s+', ' ', sql)
+    sql_upper = sql_clean.upper()
+    
+    depth = 0
+    in_string = False
+    string_char = ''
+    
+    i = 0
+    while i < len(sql_upper):
+        char = sql_upper[i]
+        
+        # 2. Toggle string literal tracking
+        if char in ("'", '"'):
+            if not in_string:
+                in_string = True
+                string_char = char
+            elif char == string_char:
+                # Handle escaped quotes
+                if i + 1 < len(sql_upper) and sql_upper[i+1] == char:
+                    i += 1
+                else:
+                    in_string = False
+                    
+        # 3. Track depth only outside strings
+        elif not in_string:
+            if char == '(':
+                depth += 1
+            elif char == ')':
+                depth -= 1
+                
+            # 4. Check for 'ORDER BY' at root depth
+            elif depth == 0 and sql_upper[i:i+8] == 'ORDER BY':
+                
+                # 5. Prevent substring false-positives (e.g., REORDER BY)
+                prev_char = sql_upper[i-1] if i > 0 else ' '
+                next_char = sql_upper[i+8] if i+8 < len(sql_upper) else ' '
+                
+                # A valid SQL keyword boundary means it isn't touching letters, numbers, or underscores
+                prev_is_boundary = not (prev_char.isalnum() or prev_char == '_')
+                next_is_boundary = not (next_char.isalnum() or next_char == '_')
+                
+                if prev_is_boundary and next_is_boundary:
+                    return True
+                
+        i += 1
+        
+    return False
+
+def execute_sql(predicted_sql, ground_truth, db_place, idx):
     conn = get_pg_connection(schema=db_place)
     cursor = conn.cursor()
-    
+
     try:
-        cursor.execute(normalize_pg_sql(predicted_sql))
-        predicted_res = cursor.fetchall()
-        pred_cols = [desc[0] for desc in cursor.description]  # ← add this
-        
-        cursor.execute(normalize_pg_sql(ground_truth))
-        ground_truth_res = cursor.fetchall()
-        gold_cols = [desc[0] for desc in cursor.description]  # ← add this
-    except Exception as e:
-        logger.error(f"SQL execution error: {e}")        
-        return 0, 0, 0
+        try:
+            cursor.execute(normalize_pg_sql(ground_truth))
+            ground_truth_res = cursor.fetchall()
+            gold_cols = [desc[0].lower() for desc in cursor.description]  # ← add this
+        except Exception as e:
+            logger.error(f"GOLD SQL execution error on idx={idx}: {e}")        
+            return 0, 0, 0 
+
+        try:
+            cursor.execute(normalize_pg_sql(predicted_sql))
+            predicted_res = cursor.fetchall()
+            pred_cols = [desc[0].lower() for desc in cursor.description]  # ← add this
+        except Exception as e:
+            logger.error(f"PREDICTED SQL execution error: {e}")        
+            return 0, 0, len(ground_truth_res)
+
     finally:
         cursor.close()
         conn.close()
-    
-    #TODO: if sorted(predicted_res) == sorted(ground_truth_res):
-    #TODO: Using set() means queries that intentionally return duplicate rows (without DISTINCT) will incorrectly match.
-    #TODO: If the gold query returns [(1,), (1,), (2,)]
-    #TODO: If the pred returns [(1,), (2,)]
-    #TODO: they'll both become {(1,), (2,)} and match.
-    if set(predicted_res) == set(ground_truth_res):
+
+    print(f"")
+    print(f"\033[1;31m[EX DEBUG] idx={idx} | pred_rows_count={len(predicted_res)} | gold_rows_count={len(ground_truth_res)}\033[0m")
+
+    print(f"[SAMPLE] pred_cols : {pred_cols}", file=sys.stderr, flush=True)
+    print(f"[SAMPLE] gold_cols : {gold_cols}", file=sys.stderr, flush=True)
+    print(f"[SAMPLE] pred_rows ({len(predicted_res)} total):", file=sys.stderr, flush=True)
+    for row in predicted_res[:10]:
+        print(f"  {row}", file=sys.stderr, flush=True)
+    print(f"[SAMPLE] gold_rows ({len(ground_truth_res)} total):", file=sys.stderr, flush=True)
+    for row in ground_truth_res[:10]:
+        print(f"  {row}", file=sys.stderr, flush=True)
+    print(f"", file=sys.stderr, flush=True)
+
+    # order_matters = "order by" in ground_truth.lower()
+    order_matters = has_outer_order_by(ground_truth)
+    def results_match(pred, gold):
+        if order_matters:
+            return pred == gold
+        return Counter(pred) == Counter(gold)
+
+    if len(pred_cols) < len(gold_cols):
+        print(f"[EX FAIL] Predicted columns < Gold columns | pred_cols={pred_cols} | gold_cols={gold_cols}")
+        print(f"[EX DEBUG] pred_proj={predicted_res[:3]}")
+        print(f"[EX DEBUG] gold_proj={ground_truth_res[:3]}")
+        return 0, len(predicted_res), len(ground_truth_res)
+
+    # 3. Use Order-Aware or Multiset Matching instead of set()
+    if results_match(predicted_res, ground_truth_res):
+        print(f"[EX PASS] STRICT PASS | pred_cols={pred_cols} | gold_cols={gold_cols}")
         return 1, len(predicted_res), len(ground_truth_res)
+
+    print(f"[EX DEBUG] Strict failed | pred_cols={pred_cols} | gold_cols={gold_cols}")
+    print(f"[EX DEBUG] pred_proj={predicted_res[:3]}")
+    print(f"[EX DEBUG] gold_proj={ground_truth_res[:3]}")
 
     # Case 1: column name match
     common_cols = [c for c in gold_cols if c in pred_cols]
-    if common_cols:
+    coverage = len(common_cols) / len(gold_cols) if gold_cols else 0
+    print(f"[EX DEBUG] Case 1 | common_cols={common_cols}")
+    if common_cols and coverage == 1.0:
         pred_idx = [pred_cols.index(c) for c in common_cols]
         gold_idx = [gold_cols.index(c) for c in common_cols]
                 
         pred_projected = [tuple(row[i] for i in pred_idx) for row in predicted_res]  # ← correct
         gold_projected = [tuple(row[i] for i in gold_idx) for row in ground_truth_res]  # ← correct
 
-        if set(pred_projected) == set(gold_projected):
-            logger.info(f"[RELAXED EX PASS] Matched on columns: {common_cols}")
-            logger.info(f"[RELAXED EX PASS] Pred had extra cols: {[c for c in pred_cols if c not in gold_cols]}")
+        if results_match(pred_projected, gold_projected):
+            print(f"[EX PASS] Matched on columns: {common_cols}")
+            print(f"[EX PASS] Pred had extra cols: {[c for c in pred_cols if c not in gold_cols]}")
             return 1, len(predicted_res), len(ground_truth_res)
 
         # Column names matched but values differ — try numeric tolerance on projected
-        if is_numeric_match(pred_projected, gold_projected):
-            logger.info(f"[RELAXED EX PASS] Numeric tolerance match on columns: {common_cols}")
+        if is_numeric_match(pred_projected, gold_projected, 1e-6, order_matters):
+            print(f"[EX PASS] Numeric tolerance match on columns: {common_cols}")
             return 1, len(predicted_res), len(ground_truth_res)
 
-        logger.info(f"[RELAXED EX FAIL] Common cols found {common_cols} but values didn't match")
+        print(f"[EX DEBUG] Case 1 FAIL | common_cols={common_cols}")
+        print(f"[EX DEBUG] pred_proj={pred_projected[:3]}")
+        print(f"[EX DEBUG] gold_proj={gold_projected[:3]}")
         return 0, len(predicted_res), len(ground_truth_res)    
     
     # Case 2: value-based column alignment
-    mapping = find_matching_column_indices(predicted_res, ground_truth_res)
+    mapping = find_matching_column_indices(predicted_res, ground_truth_res, 1e-6, order_matters)
+    print(f"[EX DEBUG] Case 2 | mapping={mapping}")
     if mapping is not None:
-        logger.info(f"[RELAXED PASS] Value-based column alignment: {mapping}")
+        print(f"[EX PASS] Value-based column alignment: {mapping}")
         return 1, len(predicted_res), len(ground_truth_res)
 
     # Case 3: no common col names — try numeric tolerance on full result
     if len(pred_cols) == len(gold_cols):
-        if is_numeric_match(predicted_res, ground_truth_res):
-            logger.info(f"[RELAXED EX PASS] Numeric tolerance match, no common col names")
+        if is_numeric_match(predicted_res, ground_truth_res, 1e-6, order_matters):
+            print(f"[EX PASS] Numeric tolerance match, no common col names")
             return 1, len(predicted_res), len(ground_truth_res)
 
     # Case 4: no common names and different col counts
-    logger.info(
-        f"[RELAXED EX SKIP] Cannot relax — no common col names and "
-        f"col count mismatch (pred={len(pred_cols)}, gold={len(gold_cols)})"
-    )
+    print(f"[EX FAIL] Cannot match")
     return 0, len(predicted_res), len(ground_truth_res)
 
 
@@ -181,7 +278,7 @@ def execute_model(predicted_sql, ground_truth, db_place, idx, meta_time_out):
     res = 0
     try:
         res, pred_rc, gt_rc = func_timeout(meta_time_out, execute_sql,
-                                           args=(predicted_sql, ground_truth, db_place))
+                                           args=(predicted_sql, ground_truth, db_place, idx))
         if res == 0:
             error_type = 'mismatch'
     except KeyboardInterrupt:
@@ -380,10 +477,8 @@ if __name__ == '__main__':
     print(f"\n\033[1;33m[EX exec summary]\033[0m: total={total} passed={passed} "
           f"mismatches={mismatches} timeouts={timeouts} exec_errors={exec_errors}")
 
-    print('start calculate')
     simple_acc, moderate_acc, challenging_acc, acc, count_lists = \
         compute_acc_by_diff(exec_result, args.diff_json_path)
     score_lists = [simple_acc, moderate_acc, challenging_acc, acc]
     print_data(score_lists,count_lists)
     print('===========================================================================================')
-    print("Finished evaluation")

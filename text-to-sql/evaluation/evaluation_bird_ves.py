@@ -1,5 +1,8 @@
+from collections import Counter
+import decimal
 import os
 import pdb
+import re
 import sys
 import json
 import numpy as np
@@ -36,8 +39,11 @@ def execute_sql(sql, db_place):
     conn.close()
     return exec_time
 
+def _sort_key(row):
+    return tuple(float(v) if isinstance(v, (int, float, decimal.Decimal)) else str(v) for v in row)
 
-def is_numeric_match(pred_rows, gold_rows, tolerance=1e-6):
+
+def is_numeric_match(pred_rows, gold_rows, tolerance=1e-6, order_matters=False):
     if len(pred_rows) != len(gold_rows):
         return False
     if not pred_rows:
@@ -45,9 +51,10 @@ def is_numeric_match(pred_rows, gold_rows, tolerance=1e-6):
     if len(pred_rows[0]) != len(gold_rows[0]):
         return False
     try:
-        pred_sorted = sorted(pred_rows, key=lambda r: [str(v) for v in r])
-        gold_sorted = sorted(gold_rows, key=lambda r: [str(v) for v in r])
-        for pred_row, gold_row in zip(pred_sorted, gold_sorted):
+        pred_iter = pred_rows if order_matters else sorted(pred_rows, key=_sort_key)
+        gold_iter = gold_rows if order_matters else sorted(gold_rows, key=_sort_key)
+
+        for pred_row, gold_row in zip(pred_iter, gold_iter):
             for pred_val, gold_val in zip(pred_row, gold_row):
                 try:
                     p, g = float(pred_val), float(gold_val)
@@ -65,7 +72,7 @@ def is_numeric_match(pred_rows, gold_rows, tolerance=1e-6):
         return False
 
 
-def find_matching_column_indices(pred_rows, gold_rows):
+def find_matching_column_indices(pred_rows, gold_rows, tolerance=1e-6, order_matters=False):
     """
     For each gold column, find a pred column whose values match exactly.
     Works regardless of column count difference.
@@ -79,13 +86,20 @@ def find_matching_column_indices(pred_rows, gold_rows):
     n_pred_cols = len(pred_rows[0])
     n_gold_cols = len(gold_rows[0])
 
-    pred_sorted = sorted(pred_rows, key=lambda r: [str(v) for v in r])
-    gold_sorted = sorted(gold_rows, key=lambda r: [str(v) for v in r])
+    pred_iter = pred_rows if order_matters else sorted(pred_rows, key=_sort_key)
+    gold_iter = gold_rows if order_matters else sorted(gold_rows, key=_sort_key)
 
     def cols_match_exactly(p_idx, g_idx):
-        for pred_row, gold_row in zip(pred_sorted, gold_sorted):
-            if pred_row[p_idx] != gold_row[g_idx]:
-                return False
+        for p_row, g_row in zip(pred_iter, gold_iter):
+            p_val, g_val = p_row[p_idx], g_row[g_idx]
+            try:
+                p, g = float(p_val), float(g_val)
+                if g == 0:
+                    if abs(p) >= tolerance: return False
+                else:
+                    if abs(p - g) / abs(g) >= tolerance: return False
+            except (TypeError, ValueError):
+                if p_val != g_val: return False
         return True
 
     mapping = {}
@@ -101,72 +115,130 @@ def find_matching_column_indices(pred_rows, gold_rows):
 
     return mapping if len(mapping) == n_gold_cols else None
 
+def has_outer_order_by(sql):
+    # 1. Normalize all whitespace to a single space
+    sql_clean = re.sub(r'\s+', ' ', sql)
+    sql_upper = sql_clean.upper()
+    
+    depth = 0
+    in_string = False
+    string_char = ''
+    
+    i = 0
+    while i < len(sql_upper):
+        char = sql_upper[i]
+        
+        # 2. Toggle string literal tracking
+        if char in ("'", '"'):
+            if not in_string:
+                in_string = True
+                string_char = char
+            elif char == string_char:
+                # Handle escaped quotes
+                if i + 1 < len(sql_upper) and sql_upper[i+1] == char:
+                    i += 1
+                else:
+                    in_string = False
+                    
+        # 3. Track depth only outside strings
+        elif not in_string:
+            if char == '(':
+                depth += 1
+            elif char == ')':
+                depth -= 1
+                
+            # 4. Check for 'ORDER BY' at root depth
+            elif depth == 0 and sql_upper[i:i+8] == 'ORDER BY':
+                
+                # 5. Prevent substring false-positives (e.g., REORDER BY)
+                prev_char = sql_upper[i-1] if i > 0 else ' '
+                next_char = sql_upper[i+8] if i+8 < len(sql_upper) else ' '
+                
+                # A valid SQL keyword boundary means it isn't touching letters, numbers, or underscores
+                prev_is_boundary = not (prev_char.isalnum() or prev_char == '_')
+                next_is_boundary = not (next_char.isalnum() or next_char == '_')
+                
+                if prev_is_boundary and next_is_boundary:
+                    return True
+                
+        i += 1
+        
+    return False
 
-def iterated_execute_sql(predicted_sql, ground_truth, db_place, iterate_num, relaxed=True):
+def iterated_execute_sql(predicted_sql, ground_truth, db_place, iterate_num):
     predicted_sql = normalize_pg_sql(predicted_sql)
     ground_truth = normalize_pg_sql(ground_truth)
+
     conn = get_pg_connection(schema=db_place)
     diff_list = []
     cursor = conn.cursor()
 
-    cursor.execute(predicted_sql)
-    predicted_res = cursor.fetchall()
-    pred_cols = [desc[0] for desc in cursor.description]
+    try:
+        cursor.execute(ground_truth)
+        ground_truth_res = cursor.fetchall()
+        gold_cols = [desc[0].lower() for desc in cursor.description]
+    except Exception:
+        cursor.close()
+        conn.close()
+        return 0, True, 0, 0
 
-    cursor.execute(ground_truth)
-    ground_truth_res = cursor.fetchall()
-    gold_cols = [desc[0] for desc in cursor.description]
+    try:
+        cursor.execute(predicted_sql)
+        predicted_res = cursor.fetchall()
+        pred_cols = [desc[0].lower() for desc in cursor.description]
+    except Exception:
+        cursor.close()
+        conn.close()
+        return 0, True, 0, len(ground_truth_res)
+    finally:
+        if not cursor.closed:
+            cursor.close()
+        if not conn.closed:
+            conn.close()
 
-    cursor.close()
-    conn.close()
+    # order_matters = "order by" in ground_truth.lower()
+    order_matters = has_outer_order_by(ground_truth)
+    def results_match(pred, gold):
+        if order_matters:
+            return pred == gold
+        return Counter(pred) == Counter(gold)
 
     time_ratio = 0
     mismatch = True
 
-    if set(predicted_res) == set(ground_truth_res):   
+    if len(pred_cols) < len(gold_cols):
+        mismatch = True
+
+    elif results_match(predicted_res, ground_truth_res):
         mismatch = False
 
     else:
         # Case 1: column name match
         common_cols = [c for c in gold_cols if c in pred_cols]
-        if common_cols:
+        coverage = len(common_cols) / len(gold_cols) if gold_cols else 0
+        if common_cols and coverage == 1.0:
             pred_idx = [pred_cols.index(c) for c in common_cols]
             gold_idx = [gold_cols.index(c) for c in common_cols]
 
             pred_projected = [tuple(row[i] for i in pred_idx) for row in predicted_res]
             gold_projected = [tuple(row[i] for i in gold_idx) for row in ground_truth_res]
 
-            if set(pred_projected) == set(gold_projected):
-                print(f"[RELAXED VES PASS] Matched on cols: {common_cols}, "
-                      f"extra pred cols ignored: {[c for c in pred_cols if c not in gold_cols]}",
-                      file=sys.stderr, flush=True)
+            if results_match(predicted_res, ground_truth_res):                
                 mismatch = False  # ← treat as match for VES timing
             
-            elif is_numeric_match(pred_projected, gold_projected):
-                print(f"[RELAXED VES PASS] Numeric tolerance match on cols: {common_cols}",
-                    file=sys.stderr, flush=True)
+            elif is_numeric_match(pred_projected, gold_projected, 1e-6, order_matters):
                 mismatch = False
 
         else:
             # Case 2: value-based column alignment (exact match, any col count)
-            mapping = find_matching_column_indices(predicted_res, ground_truth_res)
+            mapping = find_matching_column_indices(predicted_res, ground_truth_res, 1e-6, order_matters)
             if mapping is not None:
-                print(f"[RELAXED VES PASS] Value-based column alignment: {mapping}",
-                      file=sys.stderr, flush=True)
                 mismatch = False
 
             # Case 2: no common col names, same col count — try numeric tolerance
             elif len(pred_cols) == len(gold_cols):
-                if is_numeric_match(predicted_res, ground_truth_res):
-                    print(f"[RELAXED VES PASS] Numeric tolerance match",
-                        file=sys.stderr, flush=True)
+                if is_numeric_match(predicted_res, ground_truth_res, 1e-6, order_matters):
                     mismatch = False
-
-            # Case 3: no common names, different col counts — can't relax
-            else:
-                print(f"[RELAXED VES SKIP] Cannot relax — no common col names and "
-                    f"col count mismatch (pred={len(pred_cols)}, gold={len(gold_cols)})",
-                    file=sys.stderr, flush=True)
 
     if not mismatch:
         for i in range(iterate_num):
@@ -180,7 +252,7 @@ def iterated_execute_sql(predicted_sql, ground_truth, db_place, iterate_num, rel
     return time_ratio, mismatch, len(predicted_res), len(ground_truth_res)
 
 
-def execute_model(predicted_sql, ground_truth, db_place, idx, iterate_num, meta_time_out, relaxed=True):
+def execute_model(predicted_sql, ground_truth, db_place, idx, iterate_num, meta_time_out):
     """
     Capture timeouts and execution errors instead of silently turning them into
     time_ratio=0. A time_ratio of 0 in VES now means *one of three* things
@@ -202,7 +274,7 @@ def execute_model(predicted_sql, ground_truth, db_place, idx, iterate_num, meta_
             print(idx, file=sys.stdout, flush=True)
         time_ratio, mismatch, pred_rc, gold_rc = func_timeout(
             meta_time_out * iterate_num, iterated_execute_sql,
-            args=(predicted_sql, ground_truth, db_place, iterate_num, relaxed))
+            args=(predicted_sql, ground_truth, db_place, iterate_num))
     except KeyboardInterrupt:
         sys.exit(0)
     except FunctionTimedOut:
@@ -247,11 +319,11 @@ def package_sqls(sql_path, db_root_path, mode='gpt', data_mode='dev'):
     return clean_sqls, db_path_list
 
 
-def run_sqls_parallel(sqls, db_places, num_cpus=1, iterate_num=100, meta_time_out=30.0, relaxed=True):
+def run_sqls_parallel(sqls, db_places, num_cpus=1, iterate_num=100, meta_time_out=30.0):
     pool = mp.Pool(processes=num_cpus)
     for i, sql_pair in enumerate(sqls):
         predicted_sql, ground_truth = sql_pair
-        pool.apply_async(execute_model, args=(predicted_sql, ground_truth, db_places[i], i, iterate_num, meta_time_out, relaxed),
+        pool.apply_async(execute_model, args=(predicted_sql, ground_truth, db_places[i], i, iterate_num, meta_time_out),
                          callback=result_callback)
     pool.close()
     pool.join()
@@ -344,7 +416,7 @@ if __name__ == '__main__':
 
     assert len(pred_queries) == len(gt_queries), "len(pred_queries) != len(gt_queries)"
     query_pairs = list(zip(pred_queries, gt_queries))
-    run_sqls_parallel(query_pairs, iterate_num=100, db_places=db_paths, num_cpus=args.num_cpus, meta_time_out=args.meta_time_out, relaxed=True)
+    run_sqls_parallel(query_pairs, iterate_num=100, db_places=db_paths, num_cpus=args.num_cpus, meta_time_out=args.meta_time_out)
     exec_result = sort_results(exec_result)
 
     # Surface silent failures (mirrors evaluation_bird_ex.py): a 0 VES used to
@@ -371,46 +443,11 @@ if __name__ == '__main__':
               file=sys.stderr, flush=True)
         raw_json_data = []
 
-    print('\n================================ VES FAILURES ================================')
-    any_failed = False
-    for r in exec_result:
-        is_fail = r.get('timeout') or r.get('error') or r.get('mismatch')
-        if not is_fail:
-            continue
-        any_failed = True
-        i = r['sql_idx']
-        item = raw_json_data[i] if i < len(raw_json_data) and isinstance(raw_json_data[i], dict) else {}
-        db_id = item.get('db_id', db_paths[i] if i < len(db_paths) else '?')
-        question = item.get('question', '')
-        evidence = item.get('evidence', '')
-        pred_sql = pred_queries[i] if i < len(pred_queries) else ''
-        gold_sql = gt_queries[i] if i < len(gt_queries) else ''
-        if r.get('timeout'):
-            reason = 'timeout'
-        elif r.get('error'):
-            reason = 'exec_error'
-        else:
-            reason = 'mismatch'
-        print(f"\033[1;31m[VES FAIL] idx={i} db_id={db_id} reason={reason}\033[0m")
-        print(f"  \033[1;32m[question]\033[0m: {question}")
-        if evidence:
-            print(f"  \033[1;32m[evidence]\033[0m: {evidence}")
-        print(f"  \033[1;32m[pred_sql]\033[0m: {pred_sql}")
-        print(f"  \033[1;32m[gold_sql]\033[0m: {gold_sql}")
-        if reason == 'mismatch':
-            print(f"  \033[1;32m[rows_count]\033[0m: pred_row_count={r.get('pred_row_count')} gold_row_count={r.get('gold_row_count')}")
-        elif reason == 'exec_error':
-            print(f"  \033[1;32m[error]\033[0m: {r.get('error')}")
-    if not any_failed:
-        print('(no failures)')
-
     print(f"\n\033[1;33m[VES exec summary]\033[0m: total={total} matched={matched} "
           f"mismatches={mismatches} timeouts={timeouts} errors={errors}")
 
-    print('start calculate')
     simple_ves, moderate_ves, challenging_ves, ves, count_lists = \
         compute_ves_by_diff(exec_result, args.diff_json_path)
     score_lists = [simple_ves, moderate_ves, challenging_ves, ves]
     print_data(score_lists, count_lists)
     print('===========================================================================================')
-    print("Finished evaluation")
