@@ -1,0 +1,331 @@
+[
+  {
+    "id": "hc_01",
+    "domain": "healthcare",
+    "requirement": "A hospital needs to manage patients and their visits. Each patient has a Medical Record Number, Name, Date of Birth, Gender, and Phone Number. A patient can have many visits (encounters), each with a Visit Number, Admission Date, Discharge Date, and the Department visited. Each visit is recorded for exactly one patient.",
+    "output": {
+      "Patient": {
+        "Attributes": ["Medical Record Number", "Name", "Date of Birth", "Gender", "Phone Number"],
+        "Primary key": ["Medical Record Number"],
+        "Foreign key": {}
+      },
+      "Visit": {
+        "Attributes": ["Visit Number", "Admission Date", "Discharge Date", "Department", "Medical Record Number"],
+        "Primary key": ["Visit Number"],
+        "Foreign key": {
+          "Medical Record Number": {"Patient": "Medical Record Number"}
+        }
+      }
+    }
+  },
+  {
+    "id": "hc_02",
+    "domain": "healthcare",
+    "requirement": "A clinic schedules appointments between patients and doctors. Each patient has a Patient ID, Name, and Insurance Number. Each doctor has a Doctor ID, Name, and Specialty. A patient can book many appointments and a doctor can attend many appointments; each appointment has an Appointment ID, Scheduled Time, Duration, and Status.",
+    "output": {
+      "Patient": {
+        "Attributes": ["Patient ID", "Name", "Insurance Number"],
+        "Primary key": ["Patient ID"],
+        "Foreign key": {}
+      },
+      "Doctor": {
+        "Attributes": ["Doctor ID", "Name", "Specialty"],
+        "Primary key": ["Doctor ID"],
+        "Foreign key": {}
+      },
+      "Appointment": {
+        "Attributes": ["Appointment ID", "Scheduled Time", "Duration", "Status", "Patient ID", "Doctor ID"],
+        "Primary key": ["Appointment ID"],
+        "Foreign key": {
+          "Patient ID": {"Patient": "Patient ID"},
+          "Doctor ID": {"Doctor": "Doctor ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "hc_03",
+    "domain": "healthcare",
+    "requirement": "A system records diagnoses made during encounters. Each encounter has an Encounter ID, Date, and the attending provider. Each diagnosis condition has a Condition Code (ICD-10), Description, and Category. An encounter can result in many diagnoses, and the same condition can be diagnosed across many encounters; for each diagnosis the system stores whether it is the primary diagnosis.",
+    "output": {
+      "Encounter": {
+        "Attributes": ["Encounter ID", "Date", "Provider"],
+        "Primary key": ["Encounter ID"],
+        "Foreign key": {}
+      },
+      "Condition": {
+        "Attributes": ["Condition Code", "Description", "Category"],
+        "Primary key": ["Condition Code"],
+        "Foreign key": {}
+      },
+      "Diagnosis": {
+        "Attributes": ["Encounter ID", "Condition Code", "Is Primary"],
+        "Primary key": ["Encounter ID", "Condition Code"],
+        "Foreign key": {
+          "Encounter ID": {"Encounter": "Encounter ID"},
+          "Condition Code": {"Condition": "Condition Code"}
+        }
+      }
+    }
+  },
+  {
+    "id": "hc_04",
+    "domain": "healthcare",
+    "requirement": "A pharmacy tracks prescriptions. Each patient has a Patient ID and Name. Each drug has a Drug Code, Name, and Unit Price. A prescription is written for one patient and may include several drugs; each prescription has a Prescription ID and Issue Date, and for every drug on it the system records the Dosage and Quantity.",
+    "output": {
+      "Patient": {
+        "Attributes": ["Patient ID", "Name"],
+        "Primary key": ["Patient ID"],
+        "Foreign key": {}
+      },
+      "Drug": {
+        "Attributes": ["Drug Code", "Name", "Unit Price"],
+        "Primary key": ["Drug Code"],
+        "Foreign key": {}
+      },
+      "Prescription": {
+        "Attributes": ["Prescription ID", "Issue Date", "Patient ID"],
+        "Primary key": ["Prescription ID"],
+        "Foreign key": {
+          "Patient ID": {"Patient": "Patient ID"}
+        }
+      },
+      "Prescription Item": {
+        "Attributes": ["Prescription ID", "Drug Code", "Dosage", "Quantity"],
+        "Primary key": ["Prescription ID", "Drug Code"],
+        "Foreign key": {
+          "Prescription ID": {"Prescription": "Prescription ID"},
+          "Drug Code": {"Drug": "Drug Code"}
+        }
+      }
+    }
+  },
+  {
+    "id": "hc_05",
+    "domain": "healthcare",
+    "requirement": "A laboratory manages test orders and their results. Each lab test type has a Test Code, Name, and Reference Range. A patient identified by Patient ID and Name can have many test orders; each order has an Order ID, Order Date, and the ordering doctor's name. An order may request several test types, and for each requested test the system records the Result Value and Result Date.",
+    "output": {
+      "Patient": {
+        "Attributes": ["Patient ID", "Name"],
+        "Primary key": ["Patient ID"],
+        "Foreign key": {}
+      },
+      "Test Type": {
+        "Attributes": ["Test Code", "Name", "Reference Range"],
+        "Primary key": ["Test Code"],
+        "Foreign key": {}
+      },
+      "Lab Order": {
+        "Attributes": ["Order ID", "Order Date", "Ordering Doctor", "Patient ID"],
+        "Primary key": ["Order ID"],
+        "Foreign key": {
+          "Patient ID": {"Patient": "Patient ID"}
+        }
+      },
+      "Lab Result": {
+        "Attributes": ["Order ID", "Test Code", "Result Value", "Result Date"],
+        "Primary key": ["Order ID", "Test Code"],
+        "Foreign key": {
+          "Order ID": {"Lab Order": "Order ID"},
+          "Test Code": {"Test Type": "Test Code"}
+        }
+      }
+    }
+  },
+  {
+    "id": "hc_06",
+    "domain": "healthcare",
+    "requirement": "A hospital manages inpatient ward and bed assignments. Each ward has a Ward Number, Name, and Floor. Each bed has a Bed Number and Bed Type and belongs to exactly one ward. A patient with a Patient ID and Name is assigned to one bed at a time; each assignment records an Assignment ID, Start Date, and End Date.",
+    "output": {
+      "Ward": {
+        "Attributes": ["Ward Number", "Name", "Floor"],
+        "Primary key": ["Ward Number"],
+        "Foreign key": {}
+      },
+      "Bed": {
+        "Attributes": ["Bed Number", "Bed Type", "Ward Number"],
+        "Primary key": ["Bed Number"],
+        "Foreign key": {
+          "Ward Number": {"Ward": "Ward Number"}
+        }
+      },
+      "Patient": {
+        "Attributes": ["Patient ID", "Name"],
+        "Primary key": ["Patient ID"],
+        "Foreign key": {}
+      },
+      "Bed Assignment": {
+        "Attributes": ["Assignment ID", "Start Date", "End Date", "Patient ID", "Bed Number"],
+        "Primary key": ["Assignment ID"],
+        "Foreign key": {
+          "Patient ID": {"Patient": "Patient ID"},
+          "Bed Number": {"Bed": "Bed Number"}
+        }
+      }
+    }
+  },
+  {
+    "id": "hc_07",
+    "domain": "healthcare",
+    "requirement": "An immunization registry records vaccinations. Each patient has a Patient ID, Name, and Date of Birth. Each vaccine has a Vaccine Code, Name, and Manufacturer. A patient may receive many vaccinations and a vaccine may be administered to many patients; each vaccination event records an Administration Date, Dose Number, and the administering nurse.",
+    "output": {
+      "Patient": {
+        "Attributes": ["Patient ID", "Name", "Date of Birth"],
+        "Primary key": ["Patient ID"],
+        "Foreign key": {}
+      },
+      "Vaccine": {
+        "Attributes": ["Vaccine Code", "Name", "Manufacturer"],
+        "Primary key": ["Vaccine Code"],
+        "Foreign key": {}
+      },
+      "Vaccination": {
+        "Attributes": ["Patient ID", "Vaccine Code", "Administration Date", "Dose Number", "Administering Nurse"],
+        "Primary key": ["Patient ID", "Vaccine Code", "Administration Date"],
+        "Foreign key": {
+          "Patient ID": {"Patient": "Patient ID"},
+          "Vaccine Code": {"Vaccine": "Vaccine Code"}
+        }
+      }
+    }
+  },
+  {
+    "id": "hc_08",
+    "domain": "healthcare",
+    "requirement": "A radiology department schedules imaging studies. Each patient has a Patient ID and Name. Each imaging machine has a Machine ID, Modality, and Room. A study has a Study ID, Study Date, Body Part, and is performed on one patient using one machine. The radiologist's report is stored with a Report Text and Report Date for each study.",
+    "output": {
+      "Patient": {
+        "Attributes": ["Patient ID", "Name"],
+        "Primary key": ["Patient ID"],
+        "Foreign key": {}
+      },
+      "Imaging Machine": {
+        "Attributes": ["Machine ID", "Modality", "Room"],
+        "Primary key": ["Machine ID"],
+        "Foreign key": {}
+      },
+      "Imaging Study": {
+        "Attributes": ["Study ID", "Study Date", "Body Part", "Report Text", "Report Date", "Patient ID", "Machine ID"],
+        "Primary key": ["Study ID"],
+        "Foreign key": {
+          "Patient ID": {"Patient": "Patient ID"},
+          "Machine ID": {"Imaging Machine": "Machine ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "hc_09",
+    "domain": "healthcare",
+    "requirement": "A clinic records patient allergies. Each patient has a Patient ID and Name. Each allergen has an Allergen ID, Name, and Type. A patient can be allergic to many allergens and an allergen can affect many patients; each recorded allergy has a Severity and the Date Identified.",
+    "output": {
+      "Patient": {
+        "Attributes": ["Patient ID", "Name"],
+        "Primary key": ["Patient ID"],
+        "Foreign key": {}
+      },
+      "Allergen": {
+        "Attributes": ["Allergen ID", "Name", "Type"],
+        "Primary key": ["Allergen ID"],
+        "Foreign key": {}
+      },
+      "Patient Allergy": {
+        "Attributes": ["Patient ID", "Allergen ID", "Severity", "Date Identified"],
+        "Primary key": ["Patient ID", "Allergen ID"],
+        "Foreign key": {
+          "Patient ID": {"Patient": "Patient ID"},
+          "Allergen ID": {"Allergen": "Allergen ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "hc_10",
+    "domain": "healthcare",
+    "requirement": "A surgical unit schedules operations. Each operating room has a Room ID and Location. Each surgeon has a Surgeon ID, Name, and Specialty. An operation has an Operation ID, Procedure Name, Scheduled Date, and Duration; it is led by one surgeon in one operating room for one patient identified by Patient ID and Name.",
+    "output": {
+      "Operating Room": {
+        "Attributes": ["Room ID", "Location"],
+        "Primary key": ["Room ID"],
+        "Foreign key": {}
+      },
+      "Surgeon": {
+        "Attributes": ["Surgeon ID", "Name", "Specialty"],
+        "Primary key": ["Surgeon ID"],
+        "Foreign key": {}
+      },
+      "Patient": {
+        "Attributes": ["Patient ID", "Name"],
+        "Primary key": ["Patient ID"],
+        "Foreign key": {}
+      },
+      "Operation": {
+        "Attributes": ["Operation ID", "Procedure Name", "Scheduled Date", "Duration", "Surgeon ID", "Room ID", "Patient ID"],
+        "Primary key": ["Operation ID"],
+        "Foreign key": {
+          "Surgeon ID": {"Surgeon": "Surgeon ID"},
+          "Room ID": {"Operating Room": "Room ID"},
+          "Patient ID": {"Patient": "Patient ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "hc_11",
+    "domain": "healthcare",
+    "requirement": "A hospital billing system issues invoices for services. Each patient has a Patient ID and Name. Each billable service has a Service Code, Description, and Standard Price. An invoice has an Invoice ID, Issue Date, and Total Amount and belongs to one patient; an invoice contains many service line items, and each line records the Quantity and Line Amount for a service.",
+    "output": {
+      "Patient": {
+        "Attributes": ["Patient ID", "Name"],
+        "Primary key": ["Patient ID"],
+        "Foreign key": {}
+      },
+      "Service": {
+        "Attributes": ["Service Code", "Description", "Standard Price"],
+        "Primary key": ["Service Code"],
+        "Foreign key": {}
+      },
+      "Invoice": {
+        "Attributes": ["Invoice ID", "Issue Date", "Total Amount", "Patient ID"],
+        "Primary key": ["Invoice ID"],
+        "Foreign key": {
+          "Patient ID": {"Patient": "Patient ID"}
+        }
+      },
+      "Invoice Line": {
+        "Attributes": ["Invoice ID", "Service Code", "Quantity", "Line Amount"],
+        "Primary key": ["Invoice ID", "Service Code"],
+        "Foreign key": {
+          "Invoice ID": {"Invoice": "Invoice ID"},
+          "Service Code": {"Service": "Service Code"}
+        }
+      }
+    }
+  },
+  {
+    "id": "hc_12",
+    "domain": "healthcare",
+    "requirement": "A health network manages provider referrals. Each provider has a Provider ID, Name, and Specialty. A referral has a Referral ID, Referral Date, Reason, and Status; it is created by one referring provider and directed to one receiving provider for a patient identified by Patient ID and Name.",
+    "output": {
+      "Provider": {
+        "Attributes": ["Provider ID", "Name", "Specialty"],
+        "Primary key": ["Provider ID"],
+        "Foreign key": {}
+      },
+      "Patient": {
+        "Attributes": ["Patient ID", "Name"],
+        "Primary key": ["Patient ID"],
+        "Foreign key": {}
+      },
+      "Referral": {
+        "Attributes": ["Referral ID", "Referral Date", "Reason", "Status", "Referring Provider ID", "Receiving Provider ID", "Patient ID"],
+        "Primary key": ["Referral ID"],
+        "Foreign key": {
+          "Referring Provider ID": {"Provider": "Provider ID"},
+          "Receiving Provider ID": {"Provider": "Provider ID"},
+          "Patient ID": {"Patient": "Patient ID"}
+        }
+      }
+    }
+  }
+]

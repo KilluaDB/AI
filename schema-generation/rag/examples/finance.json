@@ -1,0 +1,264 @@
+[
+  {
+    "id": "fi_01",
+    "domain": "finance",
+    "requirement": "A bank manages customers and their accounts. Each customer has a Customer ID, Name, and National ID. Each account has an Account Number, Account Type, Balance, and Open Date, and belongs to exactly one customer. A customer can hold many accounts.",
+    "output": {
+      "Customer": {
+        "Attributes": ["Customer ID", "Name", "National ID"],
+        "Primary key": ["Customer ID"],
+        "Foreign key": {}
+      },
+      "Account": {
+        "Attributes": ["Account Number", "Account Type", "Balance", "Open Date", "Customer ID"],
+        "Primary key": ["Account Number"],
+        "Foreign key": {
+          "Customer ID": {"Customer": "Customer ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "fi_02",
+    "domain": "finance",
+    "requirement": "A bank records transactions on accounts. Each account has an Account Number and Balance. Each transaction has a Transaction ID, Transaction Date, Amount, and Type (deposit or withdrawal), and affects exactly one account. An account can have many transactions.",
+    "output": {
+      "Account": {
+        "Attributes": ["Account Number", "Balance"],
+        "Primary key": ["Account Number"],
+        "Foreign key": {}
+      },
+      "Transaction": {
+        "Attributes": ["Transaction ID", "Transaction Date", "Amount", "Type", "Account Number"],
+        "Primary key": ["Transaction ID"],
+        "Foreign key": {
+          "Account Number": {"Account": "Account Number"}
+        }
+      }
+    }
+  },
+  {
+    "id": "fi_03",
+    "domain": "finance",
+    "requirement": "A bank processes fund transfers between accounts. Each account has an Account Number and Balance. A transfer has a Transfer ID, Transfer Date, and Amount, and moves money from one source account to one destination account.",
+    "output": {
+      "Account": {
+        "Attributes": ["Account Number", "Balance"],
+        "Primary key": ["Account Number"],
+        "Foreign key": {}
+      },
+      "Transfer": {
+        "Attributes": ["Transfer ID", "Transfer Date", "Amount", "Source Account Number", "Destination Account Number"],
+        "Primary key": ["Transfer ID"],
+        "Foreign key": {
+          "Source Account Number": {"Account": "Account Number"},
+          "Destination Account Number": {"Account": "Account Number"}
+        }
+      }
+    }
+  },
+  {
+    "id": "fi_04",
+    "domain": "finance",
+    "requirement": "A lending department manages loans. Each customer has a Customer ID and Name. Each loan has a Loan Number, Principal Amount, Interest Rate, Term Months, and Start Date, and is granted to exactly one customer. A customer can have many loans.",
+    "output": {
+      "Customer": {
+        "Attributes": ["Customer ID", "Name"],
+        "Primary key": ["Customer ID"],
+        "Foreign key": {}
+      },
+      "Loan": {
+        "Attributes": ["Loan Number", "Principal Amount", "Interest Rate", "Term Months", "Start Date", "Customer ID"],
+        "Primary key": ["Loan Number"],
+        "Foreign key": {
+          "Customer ID": {"Customer": "Customer ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "fi_05",
+    "domain": "finance",
+    "requirement": "A loan system tracks repayment installments. Each loan has a Loan Number and Principal Amount. Each installment has an Installment Number, Due Date, Amount Due, and Paid Status, and belongs to one loan. A loan has many installments.",
+    "output": {
+      "Loan": {
+        "Attributes": ["Loan Number", "Principal Amount"],
+        "Primary key": ["Loan Number"],
+        "Foreign key": {}
+      },
+      "Installment": {
+        "Attributes": ["Loan Number", "Installment Number", "Due Date", "Amount Due", "Paid Status"],
+        "Primary key": ["Loan Number", "Installment Number"],
+        "Foreign key": {
+          "Loan Number": {"Loan": "Loan Number"}
+        }
+      }
+    }
+  },
+  {
+    "id": "fi_06",
+    "domain": "finance",
+    "requirement": "A bank issues credit cards to customers. Each customer has a Customer ID and Name. Each card has a Card Number, Credit Limit, Expiry Date, and is issued to exactly one customer. A customer can hold many cards.",
+    "output": {
+      "Customer": {
+        "Attributes": ["Customer ID", "Name"],
+        "Primary key": ["Customer ID"],
+        "Foreign key": {}
+      },
+      "Credit Card": {
+        "Attributes": ["Card Number", "Credit Limit", "Expiry Date", "Customer ID"],
+        "Primary key": ["Card Number"],
+        "Foreign key": {
+          "Customer ID": {"Customer": "Customer ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "fi_07",
+    "domain": "finance",
+    "requirement": "A brokerage manages investment portfolios and the stocks they hold. Each portfolio has a Portfolio ID, Name, and Owner Name. Each stock has a Ticker Symbol, Company Name, and Market Price. A portfolio can hold many stocks and a stock can be held in many portfolios; for each holding the system stores the Number Of Shares and Average Cost.",
+    "output": {
+      "Portfolio": {
+        "Attributes": ["Portfolio ID", "Name", "Owner Name"],
+        "Primary key": ["Portfolio ID"],
+        "Foreign key": {}
+      },
+      "Stock": {
+        "Attributes": ["Ticker Symbol", "Company Name", "Market Price"],
+        "Primary key": ["Ticker Symbol"],
+        "Foreign key": {}
+      },
+      "Holding": {
+        "Attributes": ["Portfolio ID", "Ticker Symbol", "Number Of Shares", "Average Cost"],
+        "Primary key": ["Portfolio ID", "Ticker Symbol"],
+        "Foreign key": {
+          "Portfolio ID": {"Portfolio": "Portfolio ID"},
+          "Ticker Symbol": {"Stock": "Ticker Symbol"}
+        }
+      }
+    }
+  },
+  {
+    "id": "fi_08",
+    "domain": "finance",
+    "requirement": "An insurance company manages policies and claims. Each policyholder has a Holder ID and Name. Each policy has a Policy Number, Type, Premium, and Coverage Amount, and belongs to one policyholder. A policy can have many claims; each claim has a Claim ID, Claim Date, Amount, and Status.",
+    "output": {
+      "Policyholder": {
+        "Attributes": ["Holder ID", "Name"],
+        "Primary key": ["Holder ID"],
+        "Foreign key": {}
+      },
+      "Policy": {
+        "Attributes": ["Policy Number", "Type", "Premium", "Coverage Amount", "Holder ID"],
+        "Primary key": ["Policy Number"],
+        "Foreign key": {
+          "Holder ID": {"Policyholder": "Holder ID"}
+        }
+      },
+      "Claim": {
+        "Attributes": ["Claim ID", "Claim Date", "Amount", "Status", "Policy Number"],
+        "Primary key": ["Claim ID"],
+        "Foreign key": {
+          "Policy Number": {"Policy": "Policy Number"}
+        }
+      }
+    }
+  },
+  {
+    "id": "fi_09",
+    "domain": "finance",
+    "requirement": "An accounting system maintains a general ledger. Each ledger account has an Account Code, Name, and Account Type. Each journal entry has an Entry ID and Entry Date. An entry posts amounts to several ledger accounts; for each posted line the system records the Debit Amount and Credit Amount.",
+    "output": {
+      "Ledger Account": {
+        "Attributes": ["Account Code", "Name", "Account Type"],
+        "Primary key": ["Account Code"],
+        "Foreign key": {}
+      },
+      "Journal Entry": {
+        "Attributes": ["Entry ID", "Entry Date"],
+        "Primary key": ["Entry ID"],
+        "Foreign key": {}
+      },
+      "Journal Line": {
+        "Attributes": ["Entry ID", "Account Code", "Debit Amount", "Credit Amount"],
+        "Primary key": ["Entry ID", "Account Code"],
+        "Foreign key": {
+          "Entry ID": {"Journal Entry": "Entry ID"},
+          "Account Code": {"Ledger Account": "Account Code"}
+        }
+      }
+    }
+  },
+  {
+    "id": "fi_10",
+    "domain": "finance",
+    "requirement": "A bank assigns each branch its accounts and employees. Each branch has a Branch Code, Name, and City. Each account has an Account Number and Balance and is held at exactly one branch. Each employee has an Employee ID, Name, and Position and works at exactly one branch.",
+    "output": {
+      "Branch": {
+        "Attributes": ["Branch Code", "Name", "City"],
+        "Primary key": ["Branch Code"],
+        "Foreign key": {}
+      },
+      "Account": {
+        "Attributes": ["Account Number", "Balance", "Branch Code"],
+        "Primary key": ["Account Number"],
+        "Foreign key": {
+          "Branch Code": {"Branch": "Branch Code"}
+        }
+      },
+      "Employee": {
+        "Attributes": ["Employee ID", "Name", "Position", "Branch Code"],
+        "Primary key": ["Employee ID"],
+        "Foreign key": {
+          "Branch Code": {"Branch": "Branch Code"}
+        }
+      }
+    }
+  },
+  {
+    "id": "fi_11",
+    "domain": "finance",
+    "requirement": "A payment platform records bill payments by customers to billers. Each customer has a Customer ID and Name. Each biller has a Biller ID, Name, and Category. A payment has a Payment ID, Payment Date, and Amount; each payment is made by one customer to one biller.",
+    "output": {
+      "Customer": {
+        "Attributes": ["Customer ID", "Name"],
+        "Primary key": ["Customer ID"],
+        "Foreign key": {}
+      },
+      "Biller": {
+        "Attributes": ["Biller ID", "Name", "Category"],
+        "Primary key": ["Biller ID"],
+        "Foreign key": {}
+      },
+      "Bill Payment": {
+        "Attributes": ["Payment ID", "Payment Date", "Amount", "Customer ID", "Biller ID"],
+        "Primary key": ["Payment ID"],
+        "Foreign key": {
+          "Customer ID": {"Customer": "Customer ID"},
+          "Biller ID": {"Biller": "Biller ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "fi_12",
+    "domain": "finance",
+    "requirement": "A foreign exchange service records currency trades. Each currency has a Currency Code, Name, and Exchange Rate. A trade has a Trade ID, Trade Date, and Amount, and exchanges one source currency into one target currency.",
+    "output": {
+      "Currency": {
+        "Attributes": ["Currency Code", "Name", "Exchange Rate"],
+        "Primary key": ["Currency Code"],
+        "Foreign key": {}
+      },
+      "Trade": {
+        "Attributes": ["Trade ID", "Trade Date", "Amount", "Source Currency Code", "Target Currency Code"],
+        "Primary key": ["Trade ID"],
+        "Foreign key": {
+          "Source Currency Code": {"Currency": "Currency Code"},
+          "Target Currency Code": {"Currency": "Currency Code"}
+        }
+      }
+    }
+  }
+]

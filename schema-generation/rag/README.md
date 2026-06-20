@@ -1,338 +1,207 @@
-# RAG Module for Domain-Aware Database Design
+# RAG in the Schema-Generation System — How It Works Now
 
-This module provides a **domain-aware** Retrieval-Augmented Generation (RAG) system 
-designed to help generate high-quality relational database schemas for various domains.
-The system uses **ground truth** domain knowledge to guide schema design decisions.
+This is the report on how the RAG (Retrieval-Augmented Generation) component works in our system.
+RAG now provides **two complementary capabilities**, both exposed as agent tools:
 
-## Supported Domains
+1. **Dynamic few-shot retrieval** — find the most similar past requirements and show their worked
+   relational schemas as few-shot examples.
+2. **Domain knowledge rules** — explicit per-domain "ground-truth" design rules (which attributes
+   *must* be present, which are *recommended*, relationship/cardinality patterns, datatype mappings,
+   normalization guidelines).
 
-| Domain | Status | Knowledge Type |
-|--------|--------|----------------|
-| Healthcare | ✅ Available | Entity definitions, relationship patterns, constraints |
-| E-Commerce | ✅ Available | Product catalog, orders, inventory, payments |
-| Finance | 🔜 Coming Soon | Financial data patterns |
-| Education | 🔜 Coming Soon | Educational data models |
+`RAG_TOOLS` exposes the full set (1 few-shot tool + 7 knowledge tools = 8 tools). `FEWSHOT_TOOLS`
+and `KNOWLEDGE_TOOLS` expose each group separately for per-agent wiring.
 
-## Features
+---
 
-- **Automatic Domain Detection**: Analyzes requirement text to detect the domain
-- **Ground Truth Knowledge**: Pre-built knowledge for database schema design
-- **Semantic Search**: Uses sentence-transformers for similarity-based retrieval
-- **Rich Metadata**: Each chunk includes domain, entity_type, chunk_type, tags
-- **Agent Integration**: Provides tool functions for AutoGen multi-agent systems
-- **Extensible Architecture**: Easy to add new domains
+## 1. Capability A — dynamic few-shot retrieval
 
-## Project Structure
+> For each input requirement, RAG embeds the requirement text, finds the **2–3 most similar past
+> requirements** from a curated example store, and returns their **`requirement → relational schema`**
+> pairs. The design agents use those pairs as **few-shot examples** while producing the schema.
 
 ```
-rag/
-├── __init__.py          # Module exports
-├── base_rag.py          # Base RAG retriever class
-├── rag_config.py        # General configuration & domain detection
-├── rag_tools.py         # Agent tool functions
-├── README.md
-├── cache/               # Cached embeddings
-└── domains/
-    ├── __init__.py      # Domain retriever factory
-    ├── healthcare/      # Healthcare domain
-    │   ├── __init__.py
-    │   ├── healthcare_config.py      # Healthcare-specific config
-    │   └── healthcare_retriever.py   # Healthcare RAG retriever
-    └── ecommerce/       # E-Commerce domain
-        ├── __init__.py
-        ├── ecommerce_config.py       # E-Commerce-specific config
-        └── ecommerce_retriever.py    # E-Commerce RAG retriever
+input requirement
+      │   (an agent calls the tool)
+      ▼
+get_similar_examples(requirement, top_k=3)
+      │   1. embed the requirement (sentence-transformers, MiniLM)
+      │   2. cosine-similarity vs. every stored example requirement
+      │   3. take the top-k
+      ▼
+top-3 { requirement → {Table: {Attributes, Primary key, Foreign key}} } pairs
+      │   formatted as a few-shot markdown block
+      ▼
+returned into the calling agent's context
 ```
 
-## Healthcare Domain Knowledge (Ground Truth)
+Code: [`fewshot_retriever.py`](fewshot_retriever.py) + [`rag_tools.py`](rag_tools.py). Data:
+[`examples/`](examples/).
 
-The healthcare domain provides comprehensive knowledge for designing healthcare database schemas:
+---
 
-### Entity Definitions
-Complete schema guidance for common healthcare entities:
-- **Patient**: Demographics, identifiers, contact info, preferences
-- **Provider**: Practitioner/physician information, credentials, specialties
-- **Encounter**: Patient visits, admissions, appointments
-- **Diagnosis**: Medical conditions, ICD codes, clinical findings
-- **Medication**: Prescriptions, drug information, dosages
-- **Observation**: Lab results, vital signs, measurements
-- **Appointment**: Scheduling, booking, availability
-- **Insurance**: Coverage, policies, claims
-- **Organization**: Healthcare facilities, departments, locations
+## 2. Capability B — domain knowledge rules
 
-### Relationship Patterns
-SQL examples for common healthcare relationships:
-- Patient → Encounter (1:N)
-- Encounter ↔ Diagnosis (M:N via junction table)
-- Provider → Encounter (1:N)
-- Medication → Encounter (N:1)
-- Observation → Encounter (N:1)
-- Patient → Insurance (1:N)
-- Appointment → Patient + Provider (N:1 each)
+The knowledge base stores curated, per-domain design rules as searchable chunks and serves them
+through seven tools. Example — the Patient entity definition surfaces *required* vs. *recommended*
+attributes:
 
-### Cardinality Rules
-PostgreSQL implementations for each cardinality type:
-- **0..1**: Optional single value (nullable foreign key)
-- **1..1**: Required single value (NOT NULL foreign key)
-- **0..*** : Optional multiple values (junction table, nullable FK)
-- **1..*** : Required multiple values (at least one required)
-- **N:1, 1:N, M:N**: All with SQL examples
-
-### Design Patterns
-- **Temporal Data**: Effective dates, history tracking
-- **Audit Trail**: Created/modified timestamps, user tracking
-- **Status Tracking**: State machines for records
-- **Address Management**: Multi-address support
-- **Contact Information**: Multiple contact methods
-- **Polymorphic Associations**: Flexible references
-- **Soft Delete**: Logical deletion with is_active flags
-
-### Normalization Rules
-Healthcare-specific examples for:
-- **1NF**: Atomic values, repeating groups
-- **2NF**: Partial dependencies
-- **3NF**: Transitive dependencies
-
-### Constraint Rules
-CHECK constraints for data validation:
-- Patient: Date of birth, gender codes, email format
-- Encounter: Date validation, status values
-- Medication: Dosage units, frequency validation
-
-## E-Commerce Domain Knowledge (Ground Truth)
-
-The e-commerce domain provides comprehensive knowledge for designing online store database schemas:
-
-### Entity Definitions
-Complete schema guidance for common e-commerce entities:
-- **Customer**: Account info, authentication, loyalty programs
-- **Product**: Catalog items, SKUs, variants, pricing
-- **Category**: Hierarchical product classification
-- **Order**: Purchase transactions, status tracking
-- **OrderItem**: Line items with price snapshots
-- **Cart**: Shopping cart with session support
-- **Payment**: Payment transactions, gateway integration
-- **Inventory**: Stock tracking across warehouses
-- **Review**: Customer ratings and reviews
-- **Coupon**: Discount codes and promotions
-- **Address**: Shipping and billing addresses
-
-### Relationship Patterns
-SQL examples for common e-commerce relationships:
-- Customer → Order (1:N)
-- Order → OrderItem (1:N)
-- Product ↔ Category (M:N)
-- Product → ProductVariant (1:N)
-- Cart → CartItem (1:N)
-- Product → Review (1:N)
-- Product → Inventory (1:N per warehouse)
-
-### Design Patterns
-- **Dynamic Pricing**: Price tiers, wholesale pricing
-- **Inventory Management**: Reservations, multi-warehouse
-- **Order State Machine**: Status transitions with validation
-- **Product Search**: Full-text search with filtering
-- **Audit Trail**: Change tracking for compliance
-- Observation: Value ranges, status codes
-
-## Usage
-
-### Basic Usage
-
-```python
-from rag import detect_domain_from_text, get_retriever_for_text
-
-# Detect domain from requirement
-requirement = "Design a patient management system for tracking visits and diagnoses"
-domain = detect_domain_from_text(requirement)
-print(f"Detected domain: {domain}")  # Domain.HEALTHCARE
-
-# Get appropriate retriever
-retriever = get_retriever_for_text(requirement)
-if retriever:
-    retriever.initialize()
-    results = retriever.search("patient demographics", top_k=5)
+```
+HEALTHCARE ENTITY: Patient
+REQUIRED ATTRIBUTES:
+  - patient_id: SERIAL PRIMARY KEY
+  - medical_record_number (MRN): VARCHAR(50) UNIQUE NOT NULL
+  - first_name / last_name: VARCHAR(100) NOT NULL
+  - date_of_birth: DATE NOT NULL
+RECOMMENDED ATTRIBUTES:
+  - middle_name, gender, ssn, marital_status, ...
 ```
 
-### Using RAG Tools with Agents
+| Tool | Returns |
+|------|---------|
+| `detect_requirement_domain` | Which domain (and whether knowledge is available). |
+| `get_entity_guidance` | Standard entity structure — required vs. recommended attributes. |
+| `get_relationship_guidance` | Relationship patterns and cardinalities between entities. |
+| `get_datatype_mapping` | Domain attribute → PostgreSQL type + constraints. |
+| `get_cardinality_rules` | Cardinality (0..1, 1..1, 0..*, 1..*) → SQL constraints. |
+| `get_normalization_rules` | Domain-specific 1NF/2NF/3NF guidance. |
+| `query_domain_rag` | General semantic search over the domain knowledge. |
 
-```python
-from rag import RAG_TOOLS
+**Domains with a knowledge base:** Healthcare (15 chunks) and E-Commerce (25 chunks). Finance and
+Education currently have **few-shot examples** but **no knowledge base** (they were placeholders in
+the original system). Code: [`knowledge_tools.py`](knowledge_tools.py) + [`base_rag.py`](base_rag.py)
++ [`domains/`](domains/).
 
-# All tools are domain-aware - they auto-detect the domain from query context
-from rag import (
-    query_domain_rag,           # General domain knowledge search
-    get_entity_guidance,        # Entity structure guidance
-    get_relationship_guidance,  # Relationship patterns
-    get_datatype_mapping,       # Data type mappings
-    get_cardinality_rules,      # Cardinality to SQL constraints
-    get_normalization_rules,    # Normalization guidelines
-    detect_requirement_domain,  # Explicit domain detection
-)
+---
 
-# Query for domain-specific guidance (auto-detects healthcare from keywords)
-result = await query_domain_rag(
-    query="Patient demographics database schema",
-    context="hospital information system",
-    top_k=5
-)
+## 3. When RAG is used — as tools
 
-# Get entity design guidance
-guidance = await get_entity_guidance(
-    entity_description="patient with medical records",
-    context="healthcare system"
-)
+All RAG capabilities are **on-demand agent tools**: an agent decides to call them (the system prompts
+tell it to). Per-agent wiring in [`design/agent_chat_physical.py`](../design/agent_chat_physical.py)
+(`_build_rag_tool_groups`):
 
-# Get relationship guidance
-relationship = await get_relationship_guidance(
-    entity1="Patient",
-    entity2="Encounter",
-    context="hospital visits"
-)
+| Agent | Few-shot (`get_similar_examples`) | Domain knowledge tools |
+|-------|:---:|---|
+| **ConceptualDesignerAgent** | ✅ | detect_requirement_domain, get_entity_guidance, get_relationship_guidance, query_domain_rag |
+| **LogicalDesignerAgent** | ✅ | get_cardinality_rules, get_normalization_rules, query_domain_rag |
+| **ConceptualReviewerAgent** | ✅ | detect_requirement_domain, get_entity_guidance, get_relationship_guidance, query_domain_rag |
+| **PhysicalDesignerAgent** | ❌ | get_datatype_mapping, query_domain_rag |
+| QA / Execution / Manager / Report | ❌ | — |
 
-# Get PostgreSQL data type mapping
-datatype = await get_datatype_mapping(
-    attribute_name="birth_date",
-    context="patient demographics"
-)
+The prompts that instruct agents to call these tools live in
+[`design/user_prompt_english.py`](../design/user_prompt_english.py) under the
+**"RAG: Similar Examples + Domain Knowledge"** sections.
 
-# Get normalization recommendations
-normalization = await get_normalization_rules(
-    table_name="patient",
-    attributes=["id", "name", "identifier", "address", "gender"],
-    is_healthcare=True
-)
+The tool import (`from rag import ...`) is wrapped in a `try/except`, so if the `rag` package or its
+dependencies are missing, the pipeline still runs — just without RAG tools.
+
+---
+
+## 4. The data — the few-shot example store
+
+Examples are plain JSON files, one per domain, in [`examples/`](examples/):
+
+```
+examples/
+  healthcare.json   (12 examples)
+  ecommerce.json    (12 examples)
+  finance.json      (12 examples)
+  education.json    (12 examples)
+  general.json      (10 examples — domain-agnostic fallback)
 ```
 
-## PostgreSQL Type Mappings
+Each file is a list of records with this shape (the `output` matches the format used by
+`datasets/RSchema/annotation.jsonl` and what the pipeline itself produces):
 
-The healthcare module includes 100+ attribute-to-PostgreSQL type mappings:
-
-| Attribute Pattern | PostgreSQL Type |
-|------------------|-----------------|
-| `*_id`, `id` | UUID PRIMARY KEY |
-| `*_date`, `date_of_*` | DATE |
-| `*_time`, `*_timestamp` | TIMESTAMP WITH TIME ZONE |
-| `name`, `*_name` | VARCHAR(255) |
-| `email` | VARCHAR(255) with email constraint |
-| `phone`, `*_phone` | VARCHAR(20) |
-| `amount`, `*_amount` | DECIMAL(12,2) |
-| `is_*`, `has_*` | BOOLEAN |
-| `status` | VARCHAR(50) |
-| `notes`, `*_notes` | TEXT |
-| `address_*` | Various VARCHAR types |
-
-## Chunk Types
-
-Each RAG chunk has a `chunk_type` indicating its content:
-
-| Type | Description |
-|------|-------------|
-| `definition` | Entity definition with attributes |
-| `relationship` | Relationship pattern with SQL |
-| `constraint` | Cardinality and constraint rules |
-| `mapping` | Datatype mapping guidance |
-| `normalization` | Normalization rules and examples |
-| `pattern` | Design pattern guidance |
-
-## Configuration
-
-### Environment Variables
-
-```bash
-# Embedding model (sentence-transformers)
-EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
-
-# Vector store type (memory, faiss, chroma, qdrant)
-VECTOR_STORE_TYPE=memory
-
-# Number of results to retrieve
-RAG_TOP_K=5
-```
-
-### Programmatic Configuration
-
-```python
-from rag import RAGConfig
-from rag.domains.healthcare import HealthcareRAGRetriever, HealthcareConfig
-
-config = RAGConfig(
-    embedding_model="sentence-transformers/all-MiniLM-L6-v2",
-    top_k=5,
-    min_relevance=0.3
-)
-
-retriever = HealthcareRAGRetriever(config)
-retriever.initialize()
-
-# Search for guidance
-results = retriever.search("patient encounter relationship")
-```
-
-## Adding a New Domain
-
-1. Create a new folder under `rag/domains/`:
-```
-rag/domains/finance/
-├── __init__.py
-├── finance_config.py
-└── finance_retriever.py
-```
-
-2. Implement the domain retriever extending `BaseRAGRetriever`:
-```python
-from rag.base_rag import BaseRAGRetriever, RAGChunk
-
-class FinanceRAGRetriever(BaseRAGRetriever):
-    def _load_domain_chunks(self) -> List[RAGChunk]:
-        chunks = []
-        # Add entity definitions
-        chunks.extend(self._get_entity_definitions())
-        # Add relationship patterns
-        chunks.extend(self._get_relationship_patterns())
-        # ... more ground truth knowledge
-        return chunks
-```
-
-3. Update `rag/domains/__init__.py`:
-```python
-if domain == Domain.FINANCE:
-    from .finance import FinanceRAGRetriever
-    return FinanceRAGRetriever(config)
-```
-
-4. Add domain keywords in `rag/rag_config.py`:
-```python
-DOMAIN_KEYWORDS = {
-    Domain.FINANCE: [
-        "account", "transaction", "ledger", "balance",
-        "payment", "invoice", "banking", ...
-    ],
-    ...
+```json
+{
+  "id": "hc_01",
+  "domain": "healthcare",
+  "requirement": "A hospital needs to manage patients and their visits. Each patient has a Medical Record Number, Name, ...",
+  "output": {
+    "Patient": {
+      "Attributes": ["Medical Record Number", "Name", "Date of Birth", "Gender", "Phone Number"],
+      "Primary key": ["Medical Record Number"],
+      "Foreign key": {}
+    },
+    "Visit": {
+      "Attributes": ["Visit Number", "Admission Date", "Discharge Date", "Department", "Medical Record Number"],
+      "Primary key": ["Visit Number"],
+      "Foreign key": { "Medical Record Number": { "Patient": "Medical Record Number" } }
+    }
+  }
 }
 ```
 
-## Ground Truth Philosophy
+Conventions (mirroring the dataset): words in attribute names are separated (`Airplane Number`);
+many-to-many relationships become a junction table with a composite primary key; a foreign key is
+written as `{"<column>": {"<ReferencedTable>": "<referenced column>"}}`.
 
-This RAG system uses a **ground truth** approach rather than retrieving from external sources:
+---
 
-1. **Pre-built Knowledge**: All domain knowledge is defined in code, ensuring consistency
-2. **Schema Design Focus**: Knowledge is tailored for PostgreSQL database design
-3. **Best Practices**: Incorporates database design best practices (normalization, indexing, constraints)
-4. **Domain Expertise**: Each domain module encapsulates expert knowledge for that field
-5. **Maintainability**: Easy to update and version control the knowledge base
+## 5. How few-shot retrieval works
 
-## Requirements
+Implemented in [`fewshot_retriever.py`](fewshot_retriever.py):
 
-- Python 3.10+
-- sentence-transformers
-- numpy
+1. **Load** — on first use, every `examples/*.json` file is read into `FewShotExample` objects
+   (pooled across all domains).
+2. **Embed** — each example's `requirement` text is embedded with
+   `sentence-transformers/all-MiniLM-L6-v2`. If `sentence-transformers` is not installed, the
+   retriever falls back to a normalized word-frequency embedding so it still functions (lower
+   quality). Embedding happens once and is reused for the process lifetime (lazy singleton via
+   `get_retriever()`).
+3. **Search** — the query requirement is embedded the same way; cosine similarity is computed against
+   all stored requirement embeddings; the top-`k` (default 3) are returned, ranked.
+   - Retrieval is **global by default** — it searches all domains and returns the most similar
+     examples regardless of domain (similar requirements naturally cluster into the same domain).
+   - An optional `domain=` filter exists for callers that want to restrict to one domain.
+   - `detect_domain_from_text()` (in [`rag_config.py`](rag_config.py)) is kept for diagnostics/optional
+     filtering; it is **not** the primary retrieval path.
+4. **Format** — `format_as_fewshot()` renders the hits as a markdown block (requirement + pretty
+   relational schema, with a relevance score) suitable for an LLM prompt.
 
-Optional:
-- faiss-cpu (for FAISS vector store)
-- chromadb (for Chroma vector store)
-- qdrant-client (for Qdrant vector store)
+---
 
-## License
+## 6. Configuration
 
-This module is part of the Multi-Agent Database Design System.
+`RAGConfig` in [`rag_config.py`](rag_config.py):
+
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| `embedding_model` | `sentence-transformers/all-MiniLM-L6-v2` | Sentence embedding model. |
+| `embedding_dim` | `384` | Embedding dimension (also caps the fallback embedding). |
+| `top_k` | `3` | Default number of examples returned. |
+| `examples_dir` | `rag/examples` | Where the example JSON files live. |
+
+---
+
+## 7. How to extend
+
+- **Add few-shot examples (any domain):** append records to `examples/<domain>.json` with a natural
+  `requirement` and an `output` in the `{Table: {Attributes, Primary key, Foreign key}}` shape. No code
+  changes — picked up on next load.
+- **Add domain-knowledge rules:** add chunks in the domain retriever under `domains/<domain>/` (entity
+  definitions with required/recommended attributes, relationship patterns, datatype maps, etc.). To add
+  a brand-new knowledge domain, create `domains/<domain>/` with a retriever subclassing
+  `BaseRAGRetriever` and register it in `domains/__init__.py` and `knowledge_tools.py::_get_retriever`.
+- **Tune retrieval:** change `top_k` / `embedding_model` in `RAGConfig`.
+
+---
+
+## 8. Module layout
+
+```
+rag/
+  rag_tools.py          # get_similar_examples (few-shot tool); FEWSHOT_TOOLS
+  fewshot_retriever.py  # FewShotRetriever (embed + cosine + fallback)
+  examples/*.json       # few-shot example store (healthcare, ecommerce, finance, education, general)
+  knowledge_tools.py    # 7 domain-knowledge tools; KNOWLEDGE_TOOLS
+  base_rag.py           # BaseRAGRetriever, RAGChunk, ChunkType (knowledge-base engine)
+  domains/              # healthcare/ and ecommerce/ knowledge retrievers + configs
+  rag_config.py         # Domain enum, detect_domain_from_text, RAGConfig
+  __init__.py           # RAG_TOOLS = FEWSHOT_TOOLS + KNOWLEDGE_TOOLS
+```
+
+> Both retrieval paths rank by semantic similarity and therefore need `sentence-transformers`
+> installed (in `requirements.txt`) for good results. Without it they fall back to a weak
+> word-frequency embedding so the system still runs.

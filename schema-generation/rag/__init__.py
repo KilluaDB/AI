@@ -1,55 +1,50 @@
 """
-RAG (Retrieval-Augmented Generation) Module for Database Design
+RAG (Retrieval-Augmented Generation) Module
 
-This module provides domain-aware RAG capabilities for the multi-agent
-database design system. It automatically detects the domain from requirements
-and uses appropriate domain-specific knowledge ("ground truth") for schema design.
+This module provides TWO complementary capabilities for the multi-agent design system:
 
-Supported Domains:
-- Healthcare (entity definitions, relationship patterns, constraints)
-- Finance (coming soon)
-- E-commerce (coming soon)
-- Education (coming soon)
+1. Dynamic few-shot retrieval (`get_similar_examples`):
+   For each input requirement, find the most similar past requirements and return their
+   `requirement -> relational schema` pairs to use as few-shot examples.
+   Data: rag/examples/<domain>.json. Code: fewshot_retriever.py + rag_tools.py.
 
-Each domain provides:
-- Entity definitions with required/recommended attributes
-- Relationship patterns with cardinality rules
-- PostgreSQL datatype mappings
-- Normalization rules and examples
-- Design patterns (temporal data, audit trails, etc.)
-- Constraint rules and validation
+2. Domain knowledge tools (per-domain "ground-truth" rules):
+   Explicit design rules for a detected domain — standard entity attributes (required vs.
+   recommended), relationship/cardinality patterns, PostgreSQL datatype mappings, and
+   normalization guidelines. Domains: Healthcare, E-Commerce.
+   Code: knowledge_tools.py + domains/<domain>/.
 
-Usage:
-    from rag import RAG_TOOLS, detect_domain_from_text
-    
-    # Add RAG tools to agents
-    agent = AssistantAgent(
-        "MyAgent",
-        tools=RAG_TOOLS,
-        ...
-    )
-    
-    # Manually detect domain
-    domain = detect_domain_from_text("Patient management system...")
+`RAG_TOOLS` exposes the full set (few-shot + knowledge). `FEWSHOT_TOOLS` and `KNOWLEDGE_TOOLS`
+expose each group separately for per-agent wiring. See rag/README.md.
 """
 
+from .rag_config import (
+    Domain,
+    RAGConfig,
+    detect_domain_from_text,
+)
+
+# --- Few-shot example retrieval -------------------------------------------------
+from .fewshot_retriever import (
+    FewShotExample,
+    FewShotResult,
+    FewShotRetriever,
+    get_retriever,
+)
+from .rag_tools import (
+    get_similar_examples,
+    FEWSHOT_TOOLS,
+)
+
+# --- Domain knowledge base ------------------------------------------------------
 from .base_rag import (
     BaseRAGRetriever,
     RAGChunk,
     RAGSearchResult,
-    RAGConfig,
     ChunkType,
     generate_chunk_id,
 )
-
-from .rag_config import (
-    Domain,
-    detect_domain_from_text,
-    COMMON_POSTGRES_TYPE_MAP,
-    CARDINALITY_MAP,
-)
-
-from .rag_tools import (
+from .knowledge_tools import (
     query_domain_rag,
     get_entity_guidance,
     get_relationship_guidance,
@@ -57,27 +52,31 @@ from .rag_tools import (
     get_cardinality_rules,
     get_normalization_rules,
     detect_requirement_domain,
-    RAG_TOOLS,
+    KNOWLEDGE_TOOLS,
 )
-
 from .domains import get_domain_retriever, get_retriever_for_text
 
+# Full tool set: few-shot retrieval + domain knowledge rules.
+RAG_TOOLS = FEWSHOT_TOOLS + KNOWLEDGE_TOOLS
+
 __all__ = [
-    # Base classes
+    # Configuration
+    "Domain",
+    "RAGConfig",
+    "detect_domain_from_text",
+    # Few-shot retrieval
+    "FewShotExample",
+    "FewShotResult",
+    "FewShotRetriever",
+    "get_retriever",
+    "get_similar_examples",
+    "FEWSHOT_TOOLS",
+    # Domain knowledge base
     "BaseRAGRetriever",
     "RAGChunk",
     "RAGSearchResult",
-    "RAGConfig",
     "ChunkType",
     "generate_chunk_id",
-    
-    # Configuration
-    "Domain",
-    "detect_domain_from_text",
-    "COMMON_POSTGRES_TYPE_MAP",
-    "CARDINALITY_MAP",
-    
-    # Tools
     "query_domain_rag",
     "get_entity_guidance",
     "get_relationship_guidance",
@@ -85,9 +84,9 @@ __all__ = [
     "get_cardinality_rules",
     "get_normalization_rules",
     "detect_requirement_domain",
-    "RAG_TOOLS",
-    
-    # Domain retrievers
+    "KNOWLEDGE_TOOLS",
     "get_domain_retriever",
     "get_retriever_for_text",
+    # Combined
+    "RAG_TOOLS",
 ]

@@ -54,14 +54,52 @@ from mermaid_tools import (
     logical_to_mermaid,
 )
 
-# Import RAG tools for domain-specific knowledge
+# Import RAG tools: few-shot example retrieval + per-domain knowledge rules
 try:
-    from rag import RAG_TOOLS, detect_domain_from_text, Domain
+    from rag import (
+        get_similar_examples,
+        query_domain_rag,
+        get_entity_guidance,
+        get_relationship_guidance,
+        get_datatype_mapping,
+        get_cardinality_rules,
+        get_normalization_rules,
+        detect_requirement_domain,
+        detect_domain_from_text,
+        Domain,
+    )
     RAG_AVAILABLE = True
 except ImportError:
-    RAG_TOOLS = []
     RAG_AVAILABLE = False
-    print("Note: RAG module not available. Domain-specific knowledge disabled.")
+    print("Note: RAG module not available. Few-shot retrieval and domain knowledge disabled.")
+
+
+def _build_rag_tool_groups():
+    """Per-agent RAG tool assignment: few-shot retrieval + relevant domain-knowledge rules."""
+    if not RAG_AVAILABLE:
+        return [], [], [], []
+    # Conceptual & reviewer: similar examples + entity/relationship/domain-detection knowledge.
+    conceptual = [
+        get_similar_examples,
+        detect_requirement_domain,
+        get_entity_guidance,
+        get_relationship_guidance,
+        query_domain_rag,
+    ]
+    # Logical: similar examples + cardinality/normalization knowledge.
+    logical = [
+        get_similar_examples,
+        get_cardinality_rules,
+        get_normalization_rules,
+        query_domain_rag,
+    ]
+    # Physical: datatype mapping knowledge (works at the DDL/type level).
+    physical = [
+        get_datatype_mapping,
+        query_domain_rag,
+    ]
+    reviewer = list(conceptual)
+    return conceptual, logical, physical, reviewer
 
 
 # NOTE: compute_closure and find_candidate_keys are now imported from shared.normalization_utils
@@ -296,15 +334,15 @@ async def main(args):
     print(f'Finished loading model: {args.model_name}')
     
     # Prepare RAG tools based on availability
-    conceptual_rag_tools = RAG_TOOLS[:4] if RAG_AVAILABLE else []  # detect, entity, relationship, query
-    logical_rag_tools = [RAG_TOOLS[4], RAG_TOOLS[5], RAG_TOOLS[0]] if RAG_AVAILABLE and len(RAG_TOOLS) > 5 else []  # cardinality, normalization, query
-    physical_rag_tools = [RAG_TOOLS[3], RAG_TOOLS[0]] if RAG_AVAILABLE and len(RAG_TOOLS) > 3 else []  # datatype, query
-    reviewer_rag_tools = RAG_TOOLS[:4] if RAG_AVAILABLE else []  # detect, entity, relationship, query
-    
+    # Per-agent RAG tools: few-shot example retrieval + domain-knowledge rules.
+    conceptual_rag_tools, logical_rag_tools, physical_rag_tools, reviewer_rag_tools = _build_rag_tool_groups()
+
     if RAG_AVAILABLE:
-        print(f"RAG tools enabled: {len(RAG_TOOLS)} tools available")
+        print(f"RAG enabled: few-shot retrieval + domain knowledge tools "
+              f"(conceptual={len(conceptual_rag_tools)}, logical={len(logical_rag_tools)}, "
+              f"physical={len(physical_rag_tools)}, reviewer={len(reviewer_rag_tools)})")
     else:
-        print("RAG tools disabled - running without domain-specific knowledge")
+        print("RAG tools disabled - running without retrieval or domain knowledge")
 
     conceptual_designer_agent = AssistantAgent(
         "ConceptualDesignerAgent",
@@ -505,10 +543,8 @@ async def stream_main(args):
     """
     model_client = create_model_client(args.model_name)
 
-    conceptual_rag_tools = RAG_TOOLS[:4] if RAG_AVAILABLE else []
-    logical_rag_tools = [RAG_TOOLS[4], RAG_TOOLS[5], RAG_TOOLS[0]] if RAG_AVAILABLE and len(RAG_TOOLS) > 5 else []
-    physical_rag_tools = [RAG_TOOLS[3], RAG_TOOLS[0]] if RAG_AVAILABLE and len(RAG_TOOLS) > 3 else []
-    reviewer_rag_tools = RAG_TOOLS[:4] if RAG_AVAILABLE else []
+    # Per-agent RAG tools: few-shot example retrieval + domain-knowledge rules.
+    conceptual_rag_tools, logical_rag_tools, physical_rag_tools, reviewer_rag_tools = _build_rag_tool_groups()
 
     conceptual_designer_agent = AssistantAgent(
         "ConceptualDesignerAgent",

@@ -6,18 +6,17 @@ def get_conceptual_design_agent_prompt():
     prompt = '''
                 You are an expert in building database entity-relationship models.
                 
-                ## Domain-Specific Knowledge (RAG)
-                Before designing, use the RAG tools if the requirement appears to be domain-specific:
-                - For healthcare (patient, hospital, clinical): Use RAG tools to get clinical entity structures
-                - For finance (bank, account, transaction): Use RAG tools for financial entity patterns
-                - For e-commerce (product, order, cart): Use RAG tools for e-commerce entity patterns
-                
-                Available RAG Tools:
-                - detect_requirement_domain: First, detect if domain-specific knowledge is available
-                - get_entity_guidance: Get standard entity structures for domain-specific entities
-                - get_relationship_guidance: Get relationship patterns between entities
-                - query_domain_rag: General domain knowledge search
-                
+                ## RAG: Similar Examples + Domain Knowledge
+                Before designing, use the RAG tools:
+                - get_similar_examples(requirement): returns the 2-3 most similar past requirements with their
+                  relational schemas. Use them as few-shot references for entities, keys, and relationships.
+                - detect_requirement_domain: detect whether domain-specific knowledge is available.
+                - get_entity_guidance: standard entity structures for the domain - which attributes MUST be
+                  present and which are RECOMMENDED for entities like Patient, Customer, Product, etc.
+                - get_relationship_guidance: standard relationship patterns and cardinalities between entities.
+                - query_domain_rag: general domain knowledge search.
+                Use retrieved examples and domain rules as guidance - adapt them, do not copy verbatim.
+
                 ## Objective:
                 Completely based on the requirements analysis report, define the entity sets, attributes of entity sets, relationships between entity sets, attributes of relationships, and mapping cardinality to build a database entity-relationship model.
                 
@@ -102,12 +101,14 @@ def get_logical_design_agent_prompt():
     prompt = '''
                 You are an expert in building database logical models.
                 
-                ## Domain-Specific Knowledge (RAG)
-                For domain-specific requirements, use RAG tools to get proper cardinality and normalization rules:
-                - get_cardinality_rules: Get cardinality to SQL constraint mappings
-                - get_normalization_rules: Get domain-specific normalization guidelines
-                - query_domain_rag: Search for domain-specific schema patterns
-                
+                ## RAG: Similar Examples + Domain Knowledge
+                - get_similar_examples(requirement): the 2-3 most similar past requirements with their
+                  relational schemas - few-shot references for tables, primary keys, foreign keys, and how
+                  many-to-many relationships become junction tables.
+                - get_cardinality_rules: cardinality (0..1, 1..1, 0..*, 1..*) to SQL constraint mappings.
+                - get_normalization_rules: domain-specific normalization (3NF) guidelines.
+                - query_domain_rag: search for domain-specific schema patterns.
+
                 ## Goal:
                 Obtain a database relational schema that conforms to the third normal form based on the conceptual design of the database. Each schema contains primary keys, attributes, and foreign keys.
                 
@@ -496,12 +497,16 @@ def get_reviewer_prompt():
     prompt = '''
             You are a reviewer of the conceptual model of a database, and you will judge whether the current latest conceptual model meets its constraints.
             
-            ## Domain-Specific Knowledge (RAG)
-            For domain-specific requirements, use RAG tools to validate against domain standards:
-            - get_entity_guidance: Verify entity structures match domain standards
-            - get_relationship_guidance: Validate relationship patterns
-            - query_domain_rag: Check for domain-specific validation rules
-            
+            ## RAG: Similar Examples + Domain Knowledge
+            Use the RAG tools to validate the design:
+            - get_similar_examples(requirement): retrieve the 2-3 most similar past requirements with their
+              relational schemas, to sanity-check that the proposed entities, keys, and relationships match
+              comparable designs.
+            - get_entity_guidance: verify entity structures (required vs. recommended attributes) match
+              domain standards.
+            - get_relationship_guidance: validate relationship patterns and cardinalities.
+            - query_domain_rag: check for domain-specific validation rules.
+
             ## Review Process:
             Specifically, for the conceptual model, you have some evaluation criteria described in the form of pseudocode. 
             You should use the final answer in the JSON format from the conceptual designer as the input of the pseudocode and deduce the output result after the pseudocode is run. You should write modification opinions and conclusions based on the output result.
@@ -643,12 +648,12 @@ def get_manager_prompt():
 def get_physical_design_agent_prompt():
     prompt = """
             You are a professional PostgreSQL database expert capable of generating executable SQL statements with intelligent data type inference and optimal indexing strategies.
-            
+
             ## Domain-Specific Knowledge (RAG)
             For domain-specific requirements, use RAG tools to get proper data type mappings:
-            - get_datatype_mapping: Get domain-specific attribute to PostgreSQL type mappings
-            - query_domain_rag: Search for domain-specific DDL patterns and constraints
-            
+            - get_datatype_mapping: domain-specific attribute to PostgreSQL type mappings and constraints.
+            - query_domain_rag: search for domain-specific DDL patterns and constraints.
+
             ## Goals:
             1. Analyze the logical schema from ManagerAgent and infer appropriate PostgreSQL data types using intelligent pattern matching.
             2. Generate well-structured, executable DDL statements with proper constraints.

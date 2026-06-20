@@ -1,0 +1,274 @@
+[
+  {
+    "id": "ed_01",
+    "domain": "education",
+    "requirement": "A university manages students enrolling in courses. Each student has a Student ID, Name, and Major. Each course has a Course Code, Title, and Credits. A student can enroll in many courses and a course can have many students; for each enrollment the system records the Semester and the Grade.",
+    "output": {
+      "Student": {
+        "Attributes": ["Student ID", "Name", "Major"],
+        "Primary key": ["Student ID"],
+        "Foreign key": {}
+      },
+      "Course": {
+        "Attributes": ["Course Code", "Title", "Credits"],
+        "Primary key": ["Course Code"],
+        "Foreign key": {}
+      },
+      "Enrollment": {
+        "Attributes": ["Student ID", "Course Code", "Semester", "Grade"],
+        "Primary key": ["Student ID", "Course Code", "Semester"],
+        "Foreign key": {
+          "Student ID": {"Student": "Student ID"},
+          "Course Code": {"Course": "Course Code"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ed_02",
+    "domain": "education",
+    "requirement": "A school organizes departments and the teachers who work in them. Each department has a Department ID, Name, and Office Location. Each teacher has a Teacher ID, Name, and Title, and belongs to exactly one department. A department can have many teachers.",
+    "output": {
+      "Department": {
+        "Attributes": ["Department ID", "Name", "Office Location"],
+        "Primary key": ["Department ID"],
+        "Foreign key": {}
+      },
+      "Teacher": {
+        "Attributes": ["Teacher ID", "Name", "Title", "Department ID"],
+        "Primary key": ["Teacher ID"],
+        "Foreign key": {
+          "Department ID": {"Department": "Department ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ed_03",
+    "domain": "education",
+    "requirement": "A university schedules course sections taught by teachers. Each course has a Course Code and Title. Each teacher has a Teacher ID and Name. A section has a Section ID, Semester, Room, and Schedule; each section belongs to one course and is taught by one teacher.",
+    "output": {
+      "Course": {
+        "Attributes": ["Course Code", "Title"],
+        "Primary key": ["Course Code"],
+        "Foreign key": {}
+      },
+      "Teacher": {
+        "Attributes": ["Teacher ID", "Name"],
+        "Primary key": ["Teacher ID"],
+        "Foreign key": {}
+      },
+      "Section": {
+        "Attributes": ["Section ID", "Semester", "Room", "Schedule", "Course Code", "Teacher ID"],
+        "Primary key": ["Section ID"],
+        "Foreign key": {
+          "Course Code": {"Course": "Course Code"},
+          "Teacher ID": {"Teacher": "Teacher ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ed_04",
+    "domain": "education",
+    "requirement": "A course management system records assignments and the grades students receive. Each assignment has an Assignment ID, Title, and Max Score. Each student has a Student ID and Name. A student submits many assignments and an assignment is submitted by many students; for each submission the system records the Submission Date and Score.",
+    "output": {
+      "Assignment": {
+        "Attributes": ["Assignment ID", "Title", "Max Score"],
+        "Primary key": ["Assignment ID"],
+        "Foreign key": {}
+      },
+      "Student": {
+        "Attributes": ["Student ID", "Name"],
+        "Primary key": ["Student ID"],
+        "Foreign key": {}
+      },
+      "Submission": {
+        "Attributes": ["Assignment ID", "Student ID", "Submission Date", "Score"],
+        "Primary key": ["Assignment ID", "Student ID"],
+        "Foreign key": {
+          "Assignment ID": {"Assignment": "Assignment ID"},
+          "Student ID": {"Student": "Student ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ed_05",
+    "domain": "education",
+    "requirement": "A university assigns each student an academic advisor. Each student has a Student ID, Name, and Enrollment Year. Each advisor has an Advisor ID, Name, and Office. Each student is advised by exactly one advisor, and an advisor can advise many students.",
+    "output": {
+      "Advisor": {
+        "Attributes": ["Advisor ID", "Name", "Office"],
+        "Primary key": ["Advisor ID"],
+        "Foreign key": {}
+      },
+      "Student": {
+        "Attributes": ["Student ID", "Name", "Enrollment Year", "Advisor ID"],
+        "Primary key": ["Student ID"],
+        "Foreign key": {
+          "Advisor ID": {"Advisor": "Advisor ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ed_06",
+    "domain": "education",
+    "requirement": "A library lends books to students. Each book has an ISBN, Title, and Author. Each student has a Student ID and Name. A loan has a Loan ID, Borrow Date, and Due Date; each loan is for one book borrowed by one student. A student can have many loans and a book can be loaned many times.",
+    "output": {
+      "Book": {
+        "Attributes": ["ISBN", "Title", "Author"],
+        "Primary key": ["ISBN"],
+        "Foreign key": {}
+      },
+      "Student": {
+        "Attributes": ["Student ID", "Name"],
+        "Primary key": ["Student ID"],
+        "Foreign key": {}
+      },
+      "Loan": {
+        "Attributes": ["Loan ID", "Borrow Date", "Due Date", "ISBN", "Student ID"],
+        "Primary key": ["Loan ID"],
+        "Foreign key": {
+          "ISBN": {"Book": "ISBN"},
+          "Student ID": {"Student": "Student ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ed_07",
+    "domain": "education",
+    "requirement": "An online learning platform organizes courses into modules and lessons. Each course has a Course ID and Title. Each module has a Module ID, Title, and Order Number, and belongs to one course. Each lesson has a Lesson ID, Title, and Duration, and belongs to one module.",
+    "output": {
+      "Course": {
+        "Attributes": ["Course ID", "Title"],
+        "Primary key": ["Course ID"],
+        "Foreign key": {}
+      },
+      "Module": {
+        "Attributes": ["Module ID", "Title", "Order Number", "Course ID"],
+        "Primary key": ["Module ID"],
+        "Foreign key": {
+          "Course ID": {"Course": "Course ID"}
+        }
+      },
+      "Lesson": {
+        "Attributes": ["Lesson ID", "Title", "Duration", "Module ID"],
+        "Primary key": ["Lesson ID"],
+        "Foreign key": {
+          "Module ID": {"Module": "Module ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ed_08",
+    "domain": "education",
+    "requirement": "A university defines prerequisite relationships between courses. Each course has a Course Code, Title, and Credits. A course can require many other courses as prerequisites, and a course can be a prerequisite for many courses.",
+    "output": {
+      "Course": {
+        "Attributes": ["Course Code", "Title", "Credits"],
+        "Primary key": ["Course Code"],
+        "Foreign key": {}
+      },
+      "Prerequisite": {
+        "Attributes": ["Course Code", "Prerequisite Course Code"],
+        "Primary key": ["Course Code", "Prerequisite Course Code"],
+        "Foreign key": {
+          "Course Code": {"Course": "Course Code"},
+          "Prerequisite Course Code": {"Course": "Course Code"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ed_09",
+    "domain": "education",
+    "requirement": "A school records exams and the rooms where they are held. Each exam has an Exam ID, Subject, and Exam Date. Each room has a Room Number, Building, and Capacity. An exam is held in exactly one room, and a room can host many exams.",
+    "output": {
+      "Room": {
+        "Attributes": ["Room Number", "Building", "Capacity"],
+        "Primary key": ["Room Number"],
+        "Foreign key": {}
+      },
+      "Exam": {
+        "Attributes": ["Exam ID", "Subject", "Exam Date", "Room Number"],
+        "Primary key": ["Exam ID"],
+        "Foreign key": {
+          "Room Number": {"Room": "Room Number"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ed_10",
+    "domain": "education",
+    "requirement": "A university tracks degree programs and the students pursuing them. Each program has a Program ID, Name, and Degree Level. Each student has a Student ID, Name, and Admission Date, and is enrolled in exactly one program. A program can have many students.",
+    "output": {
+      "Program": {
+        "Attributes": ["Program ID", "Name", "Degree Level"],
+        "Primary key": ["Program ID"],
+        "Foreign key": {}
+      },
+      "Student": {
+        "Attributes": ["Student ID", "Name", "Admission Date", "Program ID"],
+        "Primary key": ["Student ID"],
+        "Foreign key": {
+          "Program ID": {"Program": "Program ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ed_11",
+    "domain": "education",
+    "requirement": "A school manages student clubs and their members. Each club has a Club ID, Name, and Founded Year. Each student has a Student ID and Name. A student can join many clubs and a club can have many members; for each membership the system records the Join Date and Role.",
+    "output": {
+      "Club": {
+        "Attributes": ["Club ID", "Name", "Founded Year"],
+        "Primary key": ["Club ID"],
+        "Foreign key": {}
+      },
+      "Student": {
+        "Attributes": ["Student ID", "Name"],
+        "Primary key": ["Student ID"],
+        "Foreign key": {}
+      },
+      "Membership": {
+        "Attributes": ["Club ID", "Student ID", "Join Date", "Role"],
+        "Primary key": ["Club ID", "Student ID"],
+        "Foreign key": {
+          "Club ID": {"Club": "Club ID"},
+          "Student ID": {"Student": "Student ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ed_12",
+    "domain": "education",
+    "requirement": "A university records class attendance. Each section has a Section ID and Subject. Each student has a Student ID and Name. An attendance record has a Class Date and Status (present or absent), captured for one student in one section. A student attends many sessions of a section.",
+    "output": {
+      "Section": {
+        "Attributes": ["Section ID", "Subject"],
+        "Primary key": ["Section ID"],
+        "Foreign key": {}
+      },
+      "Student": {
+        "Attributes": ["Student ID", "Name"],
+        "Primary key": ["Student ID"],
+        "Foreign key": {}
+      },
+      "Attendance": {
+        "Attributes": ["Section ID", "Student ID", "Class Date", "Status"],
+        "Primary key": ["Section ID", "Student ID", "Class Date"],
+        "Foreign key": {
+          "Section ID": {"Section": "Section ID"},
+          "Student ID": {"Student": "Student ID"}
+        }
+      }
+    }
+  }
+]

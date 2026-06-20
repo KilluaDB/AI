@@ -1,0 +1,241 @@
+[
+  {
+    "id": "ge_01",
+    "domain": "general",
+    "requirement": "An airline company owns multiple airplanes, each with an Airplane Number, Model, and Passenger Capacity. Each airplane can perform many flights. Each flight has a Flight Number, Departure Time, Arrival Time, Origin, and Destination, and is operated by exactly one airplane.",
+    "output": {
+      "Airplane": {
+        "Attributes": ["Airplane Number", "Model", "Passenger Capacity"],
+        "Primary key": ["Airplane Number"],
+        "Foreign key": {}
+      },
+      "Flight": {
+        "Attributes": ["Flight Number", "Departure Time", "Arrival Time", "Origin", "Destination", "Airplane Number"],
+        "Primary key": ["Flight Number"],
+        "Foreign key": {
+          "Airplane Number": {"Airplane": "Airplane Number"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ge_02",
+    "domain": "general",
+    "requirement": "A warehousing company manages multiple warehouses, each with a Warehouse Number, Address, and Capacity. There are many goods, each with a Goods ID and Goods Name. Each inbound or outbound transaction records a Transaction ID, Time, Transaction Type, and the warehouse involved; a transaction can move many goods, and for each good the Quantity is recorded.",
+    "output": {
+      "Warehouse": {
+        "Attributes": ["Warehouse Number", "Address", "Capacity"],
+        "Primary key": ["Warehouse Number"],
+        "Foreign key": {}
+      },
+      "Goods": {
+        "Attributes": ["Goods ID", "Goods Name"],
+        "Primary key": ["Goods ID"],
+        "Foreign key": {}
+      },
+      "Transaction": {
+        "Attributes": ["Transaction ID", "Time", "Transaction Type", "Warehouse Number"],
+        "Primary key": ["Transaction ID"],
+        "Foreign key": {
+          "Warehouse Number": {"Warehouse": "Warehouse Number"}
+        }
+      },
+      "Transaction Detail": {
+        "Attributes": ["Transaction ID", "Goods ID", "Quantity"],
+        "Primary key": ["Transaction ID", "Goods ID"],
+        "Foreign key": {
+          "Transaction ID": {"Transaction": "Transaction ID"},
+          "Goods ID": {"Goods": "Goods ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ge_03",
+    "domain": "general",
+    "requirement": "A company manages employees and the departments they work in. Each department has a Department ID, Name, and Budget. Each employee has an Employee ID, Name, Hire Date, and Salary, and works in exactly one department. A department can have many employees.",
+    "output": {
+      "Department": {
+        "Attributes": ["Department ID", "Name", "Budget"],
+        "Primary key": ["Department ID"],
+        "Foreign key": {}
+      },
+      "Employee": {
+        "Attributes": ["Employee ID", "Name", "Hire Date", "Salary", "Department ID"],
+        "Primary key": ["Employee ID"],
+        "Foreign key": {
+          "Department ID": {"Department": "Department ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ge_04",
+    "domain": "general",
+    "requirement": "A hotel manages rooms and guest reservations. Each room has a Room Number, Room Type, and Rate. Each guest has a Guest ID, Name, and Phone Number. A reservation has a Reservation ID, Check-in Date, and Check-out Date; each reservation is made by one guest for one room. A guest can make many reservations.",
+    "output": {
+      "Room": {
+        "Attributes": ["Room Number", "Room Type", "Rate"],
+        "Primary key": ["Room Number"],
+        "Foreign key": {}
+      },
+      "Guest": {
+        "Attributes": ["Guest ID", "Name", "Phone Number"],
+        "Primary key": ["Guest ID"],
+        "Foreign key": {}
+      },
+      "Reservation": {
+        "Attributes": ["Reservation ID", "Check-in Date", "Check-out Date", "Guest ID", "Room Number"],
+        "Primary key": ["Reservation ID"],
+        "Foreign key": {
+          "Guest ID": {"Guest": "Guest ID"},
+          "Room Number": {"Room": "Room Number"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ge_05",
+    "domain": "general",
+    "requirement": "A telecom provider offers service plans to subscribers. Each subscriber has a Subscriber ID, Name, and Phone Number. Each plan has a Plan ID, Name, and Monthly Fee. A subscriber can subscribe to many plans and a plan can have many subscribers; for each subscription the Start Date is recorded.",
+    "output": {
+      "Subscriber": {
+        "Attributes": ["Subscriber ID", "Name", "Phone Number"],
+        "Primary key": ["Subscriber ID"],
+        "Foreign key": {}
+      },
+      "Plan": {
+        "Attributes": ["Plan ID", "Name", "Monthly Fee"],
+        "Primary key": ["Plan ID"],
+        "Foreign key": {}
+      },
+      "Subscription": {
+        "Attributes": ["Subscriber ID", "Plan ID", "Start Date"],
+        "Primary key": ["Subscriber ID", "Plan ID"],
+        "Foreign key": {
+          "Subscriber ID": {"Subscriber": "Subscriber ID"},
+          "Plan ID": {"Plan": "Plan ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ge_06",
+    "domain": "general",
+    "requirement": "A project management tool tracks projects and the tasks within them. Each project has a Project ID, Name, and Deadline. Each task has a Task ID, Title, Status, and Due Date, and belongs to exactly one project. A project can have many tasks.",
+    "output": {
+      "Project": {
+        "Attributes": ["Project ID", "Name", "Deadline"],
+        "Primary key": ["Project ID"],
+        "Foreign key": {}
+      },
+      "Task": {
+        "Attributes": ["Task ID", "Title", "Status", "Due Date", "Project ID"],
+        "Primary key": ["Task ID"],
+        "Foreign key": {
+          "Project ID": {"Project": "Project ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ge_07",
+    "domain": "general",
+    "requirement": "A restaurant records customer orders of menu items. Each menu item has an Item ID, Name, and Price. Each order has an Order ID, Order Time, and Table Number. An order can include many menu items and a menu item can appear on many orders; for each item on an order the Quantity is recorded.",
+    "output": {
+      "Menu Item": {
+        "Attributes": ["Item ID", "Name", "Price"],
+        "Primary key": ["Item ID"],
+        "Foreign key": {}
+      },
+      "Order": {
+        "Attributes": ["Order ID", "Order Time", "Table Number"],
+        "Primary key": ["Order ID"],
+        "Foreign key": {}
+      },
+      "Order Detail": {
+        "Attributes": ["Order ID", "Item ID", "Quantity"],
+        "Primary key": ["Order ID", "Item ID"],
+        "Foreign key": {
+          "Order ID": {"Order": "Order ID"},
+          "Item ID": {"Menu Item": "Item ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ge_08",
+    "domain": "general",
+    "requirement": "A logistics firm manages a fleet of vehicles and their drivers. Each vehicle has a Vehicle ID, Plate Number, and Type. Each driver has a Driver ID, Name, and License Number. A trip has a Trip ID, Start Time, End Time, Origin, and Destination; each trip uses one vehicle driven by one driver.",
+    "output": {
+      "Vehicle": {
+        "Attributes": ["Vehicle ID", "Plate Number", "Type"],
+        "Primary key": ["Vehicle ID"],
+        "Foreign key": {}
+      },
+      "Driver": {
+        "Attributes": ["Driver ID", "Name", "License Number"],
+        "Primary key": ["Driver ID"],
+        "Foreign key": {}
+      },
+      "Trip": {
+        "Attributes": ["Trip ID", "Start Time", "End Time", "Origin", "Destination", "Vehicle ID", "Driver ID"],
+        "Primary key": ["Trip ID"],
+        "Foreign key": {
+          "Vehicle ID": {"Vehicle": "Vehicle ID"},
+          "Driver ID": {"Driver": "Driver ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ge_09",
+    "domain": "general",
+    "requirement": "A manufacturer assembles products from parts. Each product has a Product ID, Name, and List Price. Each part has a Part ID, Name, and Unit Cost. A product is made of many parts and a part can be used in many products; for each part used in a product the Quantity Required is recorded.",
+    "output": {
+      "Product": {
+        "Attributes": ["Product ID", "Name", "List Price"],
+        "Primary key": ["Product ID"],
+        "Foreign key": {}
+      },
+      "Part": {
+        "Attributes": ["Part ID", "Name", "Unit Cost"],
+        "Primary key": ["Part ID"],
+        "Foreign key": {}
+      },
+      "Bill Of Materials": {
+        "Attributes": ["Product ID", "Part ID", "Quantity Required"],
+        "Primary key": ["Product ID", "Part ID"],
+        "Foreign key": {
+          "Product ID": {"Product": "Product ID"},
+          "Part ID": {"Part": "Part ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ge_10",
+    "domain": "general",
+    "requirement": "An event platform manages events and attendee registrations. Each event has an Event ID, Title, Venue, and Date. Each attendee has an Attendee ID, Name, and Email. An attendee can register for many events and an event can have many attendees; for each registration the Registration Date is recorded.",
+    "output": {
+      "Event": {
+        "Attributes": ["Event ID", "Title", "Venue", "Date"],
+        "Primary key": ["Event ID"],
+        "Foreign key": {}
+      },
+      "Attendee": {
+        "Attributes": ["Attendee ID", "Name", "Email"],
+        "Primary key": ["Attendee ID"],
+        "Foreign key": {}
+      },
+      "Registration": {
+        "Attributes": ["Event ID", "Attendee ID", "Registration Date"],
+        "Primary key": ["Event ID", "Attendee ID"],
+        "Foreign key": {
+          "Event ID": {"Event": "Event ID"},
+          "Attendee ID": {"Attendee": "Attendee ID"}
+        }
+      }
+    }
+  }
+]

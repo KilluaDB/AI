@@ -1,0 +1,274 @@
+[
+  {
+    "id": "ec_01",
+    "domain": "ecommerce",
+    "requirement": "An online store manages customers and their orders. Each customer has a Customer ID, Name, Email, and Phone Number. A customer can place many orders, each with an Order Number, Order Date, Status, and Total Amount. Every order belongs to exactly one customer.",
+    "output": {
+      "Customer": {
+        "Attributes": ["Customer ID", "Name", "Email", "Phone Number"],
+        "Primary key": ["Customer ID"],
+        "Foreign key": {}
+      },
+      "Order": {
+        "Attributes": ["Order Number", "Order Date", "Status", "Total Amount", "Customer ID"],
+        "Primary key": ["Order Number"],
+        "Foreign key": {
+          "Customer ID": {"Customer": "Customer ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ec_02",
+    "domain": "ecommerce",
+    "requirement": "A shop records the products that appear on each order. Each product has a Product ID, Name, and Unit Price. Each order has an Order Number and Order Date. An order can contain many products and a product can appear on many orders; for each product on an order the system stores the Quantity and the Price at purchase.",
+    "output": {
+      "Product": {
+        "Attributes": ["Product ID", "Name", "Unit Price"],
+        "Primary key": ["Product ID"],
+        "Foreign key": {}
+      },
+      "Order": {
+        "Attributes": ["Order Number", "Order Date"],
+        "Primary key": ["Order Number"],
+        "Foreign key": {}
+      },
+      "Order Item": {
+        "Attributes": ["Order Number", "Product ID", "Quantity", "Price At Purchase"],
+        "Primary key": ["Order Number", "Product ID"],
+        "Foreign key": {
+          "Order Number": {"Order": "Order Number"},
+          "Product ID": {"Product": "Product ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ec_03",
+    "domain": "ecommerce",
+    "requirement": "A catalog organizes products into categories. Each category has a Category ID, Name, and Description. Each product has a Product ID, Name, Price, and Description, and belongs to exactly one category. A category can contain many products.",
+    "output": {
+      "Category": {
+        "Attributes": ["Category ID", "Name", "Description"],
+        "Primary key": ["Category ID"],
+        "Foreign key": {}
+      },
+      "Product": {
+        "Attributes": ["Product ID", "Name", "Price", "Description", "Category ID"],
+        "Primary key": ["Product ID"],
+        "Foreign key": {
+          "Category ID": {"Category": "Category ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ec_04",
+    "domain": "ecommerce",
+    "requirement": "A marketplace manages a shopping cart for each customer. Each customer has a Customer ID and Name. Each product has a Product ID, Name, and Price. A customer has one active cart identified by a Cart ID with a Created Date; the cart can hold many products, and for each product the cart stores the Quantity added.",
+    "output": {
+      "Customer": {
+        "Attributes": ["Customer ID", "Name"],
+        "Primary key": ["Customer ID"],
+        "Foreign key": {}
+      },
+      "Product": {
+        "Attributes": ["Product ID", "Name", "Price"],
+        "Primary key": ["Product ID"],
+        "Foreign key": {}
+      },
+      "Cart": {
+        "Attributes": ["Cart ID", "Created Date", "Customer ID"],
+        "Primary key": ["Cart ID"],
+        "Foreign key": {
+          "Customer ID": {"Customer": "Customer ID"}
+        }
+      },
+      "Cart Item": {
+        "Attributes": ["Cart ID", "Product ID", "Quantity"],
+        "Primary key": ["Cart ID", "Product ID"],
+        "Foreign key": {
+          "Cart ID": {"Cart": "Cart ID"},
+          "Product ID": {"Product": "Product ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ec_05",
+    "domain": "ecommerce",
+    "requirement": "An online retailer processes payments for orders. Each order has an Order Number, Order Date, and Total Amount. Each payment has a Payment ID, Payment Date, Amount, and Method, and settles exactly one order. An order is paid by a single payment.",
+    "output": {
+      "Order": {
+        "Attributes": ["Order Number", "Order Date", "Total Amount"],
+        "Primary key": ["Order Number"],
+        "Foreign key": {}
+      },
+      "Payment": {
+        "Attributes": ["Payment ID", "Payment Date", "Amount", "Method", "Order Number"],
+        "Primary key": ["Payment ID"],
+        "Foreign key": {
+          "Order Number": {"Order": "Order Number"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ec_06",
+    "domain": "ecommerce",
+    "requirement": "A retailer tracks inventory across warehouses. Each warehouse has a Warehouse ID, Name, and Location. Each product has a Product ID and Name. A product can be stocked in many warehouses and a warehouse stocks many products; for each product in a warehouse the system records the Quantity On Hand and Reorder Level.",
+    "output": {
+      "Warehouse": {
+        "Attributes": ["Warehouse ID", "Name", "Location"],
+        "Primary key": ["Warehouse ID"],
+        "Foreign key": {}
+      },
+      "Product": {
+        "Attributes": ["Product ID", "Name"],
+        "Primary key": ["Product ID"],
+        "Foreign key": {}
+      },
+      "Inventory": {
+        "Attributes": ["Warehouse ID", "Product ID", "Quantity On Hand", "Reorder Level"],
+        "Primary key": ["Warehouse ID", "Product ID"],
+        "Foreign key": {
+          "Warehouse ID": {"Warehouse": "Warehouse ID"},
+          "Product ID": {"Product": "Product ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ec_07",
+    "domain": "ecommerce",
+    "requirement": "A store collects product reviews from customers. Each customer has a Customer ID and Name. Each product has a Product ID and Name. A customer can review many products and a product can be reviewed by many customers; each review has a Rating, Comment, and Review Date.",
+    "output": {
+      "Customer": {
+        "Attributes": ["Customer ID", "Name"],
+        "Primary key": ["Customer ID"],
+        "Foreign key": {}
+      },
+      "Product": {
+        "Attributes": ["Product ID", "Name"],
+        "Primary key": ["Product ID"],
+        "Foreign key": {}
+      },
+      "Review": {
+        "Attributes": ["Customer ID", "Product ID", "Rating", "Comment", "Review Date"],
+        "Primary key": ["Customer ID", "Product ID"],
+        "Foreign key": {
+          "Customer ID": {"Customer": "Customer ID"},
+          "Product ID": {"Product": "Product ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ec_08",
+    "domain": "ecommerce",
+    "requirement": "An online store offers discount coupons. Each coupon has a Coupon Code, Discount Percentage, and Expiry Date. Each order has an Order Number and Total Amount. A coupon can be applied to many orders, but each order applies at most one coupon.",
+    "output": {
+      "Coupon": {
+        "Attributes": ["Coupon Code", "Discount Percentage", "Expiry Date"],
+        "Primary key": ["Coupon Code"],
+        "Foreign key": {}
+      },
+      "Order": {
+        "Attributes": ["Order Number", "Total Amount", "Coupon Code"],
+        "Primary key": ["Order Number"],
+        "Foreign key": {
+          "Coupon Code": {"Coupon": "Coupon Code"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ec_09",
+    "domain": "ecommerce",
+    "requirement": "A store ships orders to customer addresses. Each customer has a Customer ID and Name. Each address has an Address ID, Street, City, and Postal Code, and belongs to one customer; a customer can have many addresses. Each order with an Order Number and Order Date is shipped to exactly one address.",
+    "output": {
+      "Customer": {
+        "Attributes": ["Customer ID", "Name"],
+        "Primary key": ["Customer ID"],
+        "Foreign key": {}
+      },
+      "Address": {
+        "Attributes": ["Address ID", "Street", "City", "Postal Code", "Customer ID"],
+        "Primary key": ["Address ID"],
+        "Foreign key": {
+          "Customer ID": {"Customer": "Customer ID"}
+        }
+      },
+      "Order": {
+        "Attributes": ["Order Number", "Order Date", "Address ID"],
+        "Primary key": ["Order Number"],
+        "Foreign key": {
+          "Address ID": {"Address": "Address ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ec_10",
+    "domain": "ecommerce",
+    "requirement": "A marketplace lists products sold by vendors. Each vendor has a Vendor ID, Name, and Contact Email. Each product has a Product ID, Name, and Price, and is sold by exactly one vendor. A vendor can list many products.",
+    "output": {
+      "Vendor": {
+        "Attributes": ["Vendor ID", "Name", "Contact Email"],
+        "Primary key": ["Vendor ID"],
+        "Foreign key": {}
+      },
+      "Product": {
+        "Attributes": ["Product ID", "Name", "Price", "Vendor ID"],
+        "Primary key": ["Product ID"],
+        "Foreign key": {
+          "Vendor ID": {"Vendor": "Vendor ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ec_11",
+    "domain": "ecommerce",
+    "requirement": "A store manages product variants such as size and color. Each product has a Product ID, Name, and Base Price. Each variant has a SKU, Size, Color, and Stock Quantity, and belongs to exactly one product. A product can have many variants.",
+    "output": {
+      "Product": {
+        "Attributes": ["Product ID", "Name", "Base Price"],
+        "Primary key": ["Product ID"],
+        "Foreign key": {}
+      },
+      "Product Variant": {
+        "Attributes": ["SKU", "Size", "Color", "Stock Quantity", "Product ID"],
+        "Primary key": ["SKU"],
+        "Foreign key": {
+          "Product ID": {"Product": "Product ID"}
+        }
+      }
+    }
+  },
+  {
+    "id": "ec_12",
+    "domain": "ecommerce",
+    "requirement": "A retailer tracks shipments for orders. Each order has an Order Number and Order Date. Each carrier has a Carrier ID, Name, and Phone Number. A shipment has a Shipment ID, Ship Date, Tracking Number, and Status; each shipment delivers one order and is handled by one carrier.",
+    "output": {
+      "Order": {
+        "Attributes": ["Order Number", "Order Date"],
+        "Primary key": ["Order Number"],
+        "Foreign key": {}
+      },
+      "Carrier": {
+        "Attributes": ["Carrier ID", "Name", "Phone Number"],
+        "Primary key": ["Carrier ID"],
+        "Foreign key": {}
+      },
+      "Shipment": {
+        "Attributes": ["Shipment ID", "Ship Date", "Tracking Number", "Status", "Order Number", "Carrier ID"],
+        "Primary key": ["Shipment ID"],
+        "Foreign key": {
+          "Order Number": {"Order": "Order Number"},
+          "Carrier ID": {"Carrier": "Carrier ID"}
+        }
+      }
+    }
+  }
+]
